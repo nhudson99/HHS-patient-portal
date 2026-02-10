@@ -16,6 +16,8 @@ export interface Appointment {
   time: string
   reason: string
   status: 'pending' | 'confirmed' | 'cancelled'
+  checkedIn?: boolean
+  checkInTime?: string
 }
 
 export interface MedicalDocument {

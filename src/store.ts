@@ -161,3 +161,26 @@ export function createAppointmentRequest(
   appointments.push(newAppointment)
   return newAppointment
 }
+
+export function checkInForAppointment(appointmentId: number): boolean {
+  const appointment = appointments.find(apt => apt.id === appointmentId)
+  if (appointment) {
+    appointment.checkedIn = true
+    appointment.checkInTime = new Date().toISOString()
+    return true
+  }
+  return false
+}
+
+export function findAppointmentByPatientInfo(name: string, birthday: string): Appointment | null {
+  // Find today's appointments for the patient
+  const today = new Date().toISOString().split('T')[0]
+  
+  // Find appointment matching name and for today
+  const appointment = appointments.find(apt => 
+    apt.patientName.toLowerCase() === name.toLowerCase() &&
+    apt.date === today
+  )
+  
+  return appointment || null
+}

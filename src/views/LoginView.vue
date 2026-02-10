@@ -1,5 +1,6 @@
 <template>
   <div class="login-container">
+    <button @click="goToCheckIn" class="checkin-link">Check In</button>
     <div class="login-card">
       <div class="logo">
         <h1>🏥</h1>
@@ -79,6 +80,10 @@ const handleLogin = () => {
   } else {
     error.value = 'Invalid username or password'
   }
+}
+
+const goToCheckIn = () => {
+  router.push('/checkin')
 }
 </script>
 
@@ -205,5 +210,25 @@ input:focus {
 .credentials-section p {
   margin: 2px 0;
   color: #666;
+}
+
+.checkin-link {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: 2px solid white;
+  padding: 10px 24px;
+  border-radius: 6px;
+  font-size: 16px;
+  font-weight: 600;
+  transition: all 0.3s;
+  backdrop-filter: blur(10px);
+}
+
+.checkin-link:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
 }
 </style>
