@@ -4,6 +4,7 @@ export interface User {
   password: string
   role: 'doctor' | 'patient'
   name: string
+  birthday?: string
 }
 
 export interface Appointment {

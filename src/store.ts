@@ -14,7 +14,8 @@ export const users: User[] = [
     username: 'patient1',
     password: 'patient123',
     role: 'patient',
-    name: 'John Smith'
+    name: 'John Smith',
+    birthday: '1990-05-15'
   }
 ]
 
@@ -26,7 +27,7 @@ export const appointments: Appointment[] = [
     patientName: 'John Smith',
     doctorId: 1,
     doctorName: 'Dr. Sarah Johnson',
-    date: new Date().toISOString().split('T')[0], // Today's date
+    date: new Date().toISOString().split('T')[0], // Today's date for demo/testing
     time: '10:00',
     reason: 'Annual checkup',
     status: 'confirmed'
@@ -176,15 +177,21 @@ export function findAppointmentByPatientInfo(name: string, birthday: string): Ap
   // Find today's appointments for the patient
   const today = new Date().toISOString().split('T')[0]
   
-  // Find appointment matching name and for today
-  // In a real system, birthday would be validated against patient records
-  // For demo purposes, we just check if birthday is provided
-  if (!birthday) {
+  // Find user with matching name and birthday for validation
+  const user = users.find(u => 
+    u.name.toLowerCase() === name.toLowerCase() &&
+    u.birthday === birthday &&
+    u.role === 'patient'
+  )
+  
+  // If no user found with matching name and birthday, return null
+  if (!user) {
     return null
   }
   
+  // Find appointment for this user today
   const appointment = appointments.find(apt => 
-    apt.patientName.toLowerCase() === name.toLowerCase() &&
+    apt.patientId === user.id &&
     apt.date === today
   )
   
