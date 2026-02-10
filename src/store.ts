@@ -107,6 +107,11 @@ export function logout() {
   setCurrentUser(null)
 }
 
+export function getDoctorName(doctorId: number): string {
+  const doctor = users.find(u => u.id === doctorId && u.role === 'doctor')
+  return doctor ? doctor.name : 'Unknown Doctor'
+}
+
 export function getAppointmentsForDoctor(doctorId: number): Appointment[] {
   return appointments.filter(apt => apt.doctorId === doctorId)
 }
@@ -137,8 +142,13 @@ export function createAppointmentRequest(
   time: string,
   reason: string
 ): Appointment {
+  // Find max ID to avoid duplicates
+  const maxId = appointments.length > 0 
+    ? Math.max(...appointments.map(apt => apt.id))
+    : 0
+  
   const newAppointment: Appointment = {
-    id: appointments.length + 1,
+    id: maxId + 1,
     patientId,
     patientName,
     doctorId,

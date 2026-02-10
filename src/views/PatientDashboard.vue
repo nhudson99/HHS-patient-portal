@@ -155,6 +155,7 @@ import {
   getAppointmentsForPatient, 
   getDocumentsForPatient,
   createAppointmentRequest,
+  getDoctorName,
   logout 
 } from '@/store'
 import type { Appointment, MedicalDocument } from '@/types'
@@ -203,11 +204,12 @@ const loadData = () => {
 
 const handleAppointmentRequest = () => {
   if (currentUser.value && appointmentForm.value.doctorId) {
+    const doctorId = parseInt(appointmentForm.value.doctorId)
     createAppointmentRequest(
       currentUser.value.id,
       currentUser.value.name,
-      parseInt(appointmentForm.value.doctorId),
-      appointmentForm.value.doctorId === '1' ? 'Dr. Sarah Johnson' : 'Doctor',
+      doctorId,
+      getDoctorName(doctorId),
       appointmentForm.value.date,
       appointmentForm.value.time,
       appointmentForm.value.reason
