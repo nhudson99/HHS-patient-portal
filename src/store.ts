@@ -1,0 +1,153 @@
+import type { User, Appointment, MedicalDocument } from '@/types'
+
+// Hardcoded users for demo
+export const users: User[] = [
+  {
+    id: 1,
+    username: 'doctor1',
+    password: 'doctor123',
+    role: 'doctor',
+    name: 'Dr. Sarah Johnson'
+  },
+  {
+    id: 2,
+    username: 'patient1',
+    password: 'patient123',
+    role: 'patient',
+    name: 'John Smith'
+  }
+]
+
+// Hardcoded appointments for demo
+export const appointments: Appointment[] = [
+  {
+    id: 1,
+    patientId: 2,
+    patientName: 'John Smith',
+    doctorId: 1,
+    doctorName: 'Dr. Sarah Johnson',
+    date: '2026-02-15',
+    time: '10:00',
+    reason: 'Annual checkup',
+    status: 'confirmed'
+  },
+  {
+    id: 2,
+    patientId: 2,
+    patientName: 'John Smith',
+    doctorId: 1,
+    doctorName: 'Dr. Sarah Johnson',
+    date: '2026-02-20',
+    time: '14:30',
+    reason: 'Follow-up consultation',
+    status: 'pending'
+  },
+  {
+    id: 3,
+    patientId: 2,
+    patientName: 'John Smith',
+    doctorId: 1,
+    doctorName: 'Dr. Sarah Johnson',
+    date: '2026-02-18',
+    time: '09:00',
+    reason: 'Blood pressure check',
+    status: 'pending'
+  }
+]
+
+// Hardcoded medical documents for demo
+export const medicalDocuments: MedicalDocument[] = [
+  {
+    id: 1,
+    patientId: 2,
+    title: 'Blood Test Results',
+    type: 'lab_result',
+    date: '2026-01-15',
+    content: 'All blood test results are within normal range. Cholesterol: 180 mg/dL, Blood Sugar: 95 mg/dL, Hemoglobin: 14.5 g/dL'
+  },
+  {
+    id: 2,
+    patientId: 2,
+    title: 'Prescription - Blood Pressure Medication',
+    type: 'prescription',
+    date: '2026-01-20',
+    content: 'Lisinopril 10mg - Take one tablet daily in the morning. Refills: 3'
+  },
+  {
+    id: 3,
+    patientId: 2,
+    title: 'Chest X-Ray Report',
+    type: 'imaging',
+    date: '2025-12-10',
+    content: 'Chest X-ray shows clear lung fields with no abnormalities detected. Heart size is normal.'
+  }
+]
+
+// Current logged in user (null when not logged in)
+export let currentUser: User | null = null
+
+export function setCurrentUser(user: User | null) {
+  currentUser = user
+}
+
+export function getCurrentUser(): User | null {
+  return currentUser
+}
+
+export function authenticateUser(username: string, password: string): User | null {
+  const user = users.find(u => u.username === username && u.password === password)
+  if (user) {
+    setCurrentUser(user)
+    return user
+  }
+  return null
+}
+
+export function logout() {
+  setCurrentUser(null)
+}
+
+export function getAppointmentsForDoctor(doctorId: number): Appointment[] {
+  return appointments.filter(apt => apt.doctorId === doctorId)
+}
+
+export function getAppointmentsForPatient(patientId: number): Appointment[] {
+  return appointments.filter(apt => apt.patientId === patientId)
+}
+
+export function getDocumentsForPatient(patientId: number): MedicalDocument[] {
+  return medicalDocuments.filter(doc => doc.patientId === patientId)
+}
+
+export function confirmAppointment(appointmentId: number): boolean {
+  const appointment = appointments.find(apt => apt.id === appointmentId)
+  if (appointment) {
+    appointment.status = 'confirmed'
+    return true
+  }
+  return false
+}
+
+export function createAppointmentRequest(
+  patientId: number,
+  patientName: string,
+  doctorId: number,
+  doctorName: string,
+  date: string,
+  time: string,
+  reason: string
+): Appointment {
+  const newAppointment: Appointment = {
+    id: appointments.length + 1,
+    patientId,
+    patientName,
+    doctorId,
+    doctorName,
+    date,
+    time,
+    reason,
+    status: 'pending'
+  }
+  appointments.push(newAppointment)
+  return newAppointment
+}
