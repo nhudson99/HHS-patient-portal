@@ -141,6 +141,15 @@
             </div>
             <div class="document-type">{{ formatDocumentType(document.type) }}</div>
             <div class="document-content">{{ document.content }}</div>
+            <div class="document-actions">
+              <a 
+                href="/testDoc.pdf" 
+                download 
+                class="download-link"
+              >
+                📥 Download PDF
+              </a>
+            </div>
           </div>
         </div>
       </div>
@@ -595,5 +604,33 @@ textarea {
   color: #666;
   line-height: 1.6;
   font-size: 14px;
+  margin-bottom: 15px;
+}
+
+.document-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.download-link {
+  display: inline-block;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.download-link:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.download-link:active {
+  transform: translateY(0);
 }
 </style>
