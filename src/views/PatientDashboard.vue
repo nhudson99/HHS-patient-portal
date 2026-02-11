@@ -4,6 +4,7 @@
       <div class="header-content">
         <h1>🏥 Patient Portal</h1>
         <div class="user-info">
+          <button @click="goToCheckIn" class="checkin-button-header">Check In</button>
           <span>Welcome, {{ currentUser?.name }}</span>
           <button @click="handleLogout" class="logout-button">Logout</button>
         </div>
@@ -273,6 +274,10 @@ const handleLogout = () => {
   router.push('/')
 }
 
+const goToCheckIn = () => {
+  router.push('/checkin')
+}
+
 onMounted(() => {
   loadData()
 })
@@ -323,6 +328,21 @@ onMounted(() => {
 
 .logout-button:hover {
   background: rgba(255, 255, 255, 0.3);
+}
+
+.checkin-button-header {
+  background: rgba(255, 255, 255, 0.3);
+  color: white;
+  border: 1px solid white;
+  padding: 8px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.3s;
+}
+
+.checkin-button-header:hover {
+  background: rgba(255, 255, 255, 0.4);
 }
 
 .main-content {

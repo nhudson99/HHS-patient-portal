@@ -49,9 +49,12 @@
                 <span class="date">{{ formatDate(appointment.date) }}</span>
                 <span class="time">{{ appointment.time }}</span>
               </div>
-              <span class="status-badge" :class="appointment.status">
-                {{ appointment.status.toUpperCase() }}
-              </span>
+              <div class="status-badges">
+                <span v-if="appointment.checkedIn" class="checkin-badge">CHECKED IN</span>
+                <span class="status-badge" :class="appointment.status">
+                  {{ appointment.status.toUpperCase() }}
+                </span>
+              </div>
             </div>
             <div class="appointment-body">
               <h3>{{ appointment.patientName }}</h3>
@@ -290,6 +293,32 @@ onMounted(() => {
 .status-badge.confirmed {
   background: #66bb6a;
   color: white;
+}
+
+.status-badges {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.checkin-badge {
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #2196f3;
+  color: white;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
 }
 
 .appointment-body h3 {

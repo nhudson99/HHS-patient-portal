@@ -4,6 +4,7 @@ export interface User {
   password: string
   role: 'doctor' | 'patient'
   name: string
+  birthday?: string
 }
 
 export interface Appointment {
@@ -16,6 +17,8 @@ export interface Appointment {
   time: string
   reason: string
   status: 'pending' | 'confirmed' | 'cancelled'
+  checkedIn?: boolean
+  checkInTime?: string
 }
 
 export interface MedicalDocument {
