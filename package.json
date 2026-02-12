@@ -6,7 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "api": "source venv/bin/activate && python api/app.py",
+    "setup:db": "./setup-db.sh",
+    "server": "npm run api",
+    "server:ts": "tsx watch server/index.ts",
+    "server:build": "tsc -p tsconfig.server.json",
+    "server:start": "node dist/server/index.js"
   },
   "repository": {
     "type": "git",
@@ -20,11 +26,29 @@
   },
   "homepage": "https://github.com/nhudson99/HHS-patient-portal#readme",
   "dependencies": {
+    "bcrypt": "^6.0.0",
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "crypto-js": "^4.2.0",
+    "dotenv": "^17.2.4",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1",
+    "express-session": "^1.19.0",
+    "helmet": "^8.1.0",
+    "pg": "^8.18.0",
     "vue": "^3.5.28",
     "vue-router": "^5.0.2"
   },
   "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/express-session": "^1.18.2",
+    "@types/pg": "^8.16.0",
     "@vitejs/plugin-vue": "^6.0.4",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
     "vue-tsc": "^3.2.4"

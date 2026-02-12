@@ -5,3 +5,17 @@ dist
 .env
 .env.local
 .env.*.local
+
+# Python
+api/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+
+# TypeScript server (legacy)
+server/

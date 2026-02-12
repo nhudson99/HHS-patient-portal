@@ -6,6 +6,7 @@ export const users: User[] = [
     id: 1,
     username: 'doctor1',
     password: 'doctor123',
+    email: 'doctor1@hhs.local',
     role: 'doctor',
     name: 'Dr. Sarah Johnson'
   },
@@ -13,6 +14,7 @@ export const users: User[] = [
     id: 2,
     username: 'patient1',
     password: 'patient123',
+    email: 'patient1@hhs.local',
     role: 'patient',
     name: 'John Smith',
     birthday: '1990-05-15'
@@ -84,8 +86,27 @@ export const medicalDocuments: MedicalDocument[] = [
   }
 ]
 
-// Current logged in user (null when not logged in)
+// Current logged in user
 export let currentUser: User | null = null
+
+// Initialize from localStorage if available
+const storedUser = localStorage.getItem('currentUser')
+if (storedUser) {
+  try {
+    const userData = JSON.parse(storedUser)
+    // Convert API user format to local User format
+    currentUser = {
+      id: parseInt(userData.id) || 0,
+      username: userData.username,
+      password: '', // Not stored in localStorage
+      role: userData.role,
+      name: userData.username, // Use username as name for now
+      email: userData.email
+    }
+  } catch (e) {
+    console.error('Failed to parse stored user:', e)
+  }
+}
 
 export function setCurrentUser(user: User | null) {
   currentUser = user
@@ -106,27 +127,34 @@ export function authenticateUser(username: string, password: string): User | nul
 
 export function logout() {
   setCurrentUser(null)
+  localStorage.removeItem('sessionToken')
+  localStorage.removeItem('currentUser')
 }
 
-export function getDoctorName(doctorId: number): string {
-  const doctor = users.find(u => u.id === doctorId && u.role === 'doctor')
-  return doctor ? doctor.name : 'Unknown Doctor'
+export function getDoctorName(doctorId: number | string): string {
+  const numId = typeof doctorId === 'string' ? parseInt(doctorId) : doctorId
+  const doctor = users.find(u => u.id === numId && u.role === 'doctor')
+  return doctor ? (doctor.name || doctor.username) : 'Unknown Doctor'
 }
 
-export function getAppointmentsForDoctor(doctorId: number): Appointment[] {
-  return appointments.filter(apt => apt.doctorId === doctorId)
+export function getAppointmentsForDoctor(doctorId: number | string): Appointment[] {
+  const numId = typeof doctorId === 'string' ? parseInt(doctorId) : doctorId
+  return appointments.filter(apt => apt.doctorId === numId)
 }
 
-export function getAppointmentsForPatient(patientId: number): Appointment[] {
-  return appointments.filter(apt => apt.patientId === patientId)
+export function getAppointmentsForPatient(patientId: number | string): Appointment[] {
+  const numId = typeof patientId === 'string' ? parseInt(patientId) : patientId
+  return appointments.filter(apt => apt.patientId === numId)
 }
 
-export function getDocumentsForPatient(patientId: number): MedicalDocument[] {
-  return medicalDocuments.filter(doc => doc.patientId === patientId)
+export function getDocumentsForPatient(patientId: number | string): MedicalDocument[] {
+  const numId = typeof patientId === 'string' ? parseInt(patientId) : patientId
+  return medicalDocuments.filter(doc => doc.patientId === numId)
 }
 
-export function confirmAppointment(appointmentId: number): boolean {
-  const appointment = appointments.find(apt => apt.id === appointmentId)
+export function confirmAppointment(appointmentId: number | string): boolean {
+  const numId = typeof appointmentId === 'string' ? parseInt(appointmentId) : appointmentId
+  const appointment = appointments.find(apt => apt.id === numId)
   if (appointment) {
     appointment.status = 'confirmed'
     return true
@@ -135,14 +163,17 @@ export function confirmAppointment(appointmentId: number): boolean {
 }
 
 export function createAppointmentRequest(
-  patientId: number,
+  patientId: number | string,
   patientName: string,
-  doctorId: number,
+  doctorId: number | string,
   doctorName: string,
   date: string,
   time: string,
   reason: string
 ): Appointment {
+  const numPatientId = typeof patientId === 'string' ? parseInt(patientId) : patientId
+  const numDoctorId = typeof doctorId === 'string' ? parseInt(doctorId) : doctorId
+  
   // Find max ID to avoid duplicates
   const maxId = appointments.length > 0 
     ? Math.max(...appointments.map(apt => apt.id))
@@ -150,9 +181,9 @@ export function createAppointmentRequest(
   
   const newAppointment: Appointment = {
     id: maxId + 1,
-    patientId,
+    patientId: numPatientId,
     patientName,
-    doctorId,
+    doctorId: numDoctorId,
     doctorName,
     date,
     time,
@@ -163,8 +194,9 @@ export function createAppointmentRequest(
   return newAppointment
 }
 
-export function checkInForAppointment(appointmentId: number): boolean {
-  const appointment = appointments.find(apt => apt.id === appointmentId)
+export function checkInForAppointment(appointmentId: number | string): boolean {
+  const numId = typeof appointmentId === 'string' ? parseInt(appointmentId) : appointmentId
+  const appointment = appointments.find(apt => apt.id === numId)
   if (appointment) {
     appointment.checkedIn = true
     appointment.checkInTime = new Date().toISOString()
@@ -179,7 +211,7 @@ export function findAppointmentByPatientInfo(name: string, birthday: string): Ap
   
   // Find user with matching name and birthday for validation
   const user = users.find(u => 
-    u.name.toLowerCase() === name.toLowerCase() &&
+    (u.name || u.username).toLowerCase() === name.toLowerCase() &&
     u.birthday === birthday &&
     u.role === 'patient'
   )

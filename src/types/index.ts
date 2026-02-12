@@ -1,9 +1,10 @@
 export interface User {
-  id: number
+  id: number | string
   username: string
-  password: string
+  password?: string
+  email?: string
   role: 'doctor' | 'patient'
-  name: string
+  name?: string
   birthday?: string
 }
 

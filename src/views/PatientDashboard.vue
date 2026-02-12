@@ -217,7 +217,7 @@ const handleAppointmentRequest = () => {
     const doctorId = parseInt(appointmentForm.value.doctorId)
     createAppointmentRequest(
       currentUser.value.id,
-      currentUser.value.name,
+      currentUser.value.name || currentUser.value.username || 'Patient',
       doctorId,
       getDoctorName(doctorId),
       appointmentForm.value.date,
