@@ -44,5 +44,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 ENV FLASK_ENV=production
 ENV PYTHONUNBUFFERED=1
 
-# Run API server
-CMD ["python", "api/app.py"]
+# Run API server with gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:3000", "--workers", "4", "--worker-class", "sync", "--timeout", "120", "api.app:app"]
