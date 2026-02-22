@@ -45,6 +45,14 @@ if ! docker ps &> /dev/null; then
     DOCKER_CMD="sudo docker"
 fi
 
+# Clean up any existing containers and volumes
+echo "🧹 Cleaning up existing containers..."
+if [[ $DOCKER_CMD == *"sudo"* ]]; then
+    sudo docker-compose down -v 2>/dev/null || true
+else
+    docker-compose down -v 2>/dev/null || true
+fi
+
 # Build the Docker image
 echo "🔨 Building Docker image..."
 $DOCKER_CMD build -t hhs-patient-portal:latest .
@@ -57,9 +65,9 @@ else
     docker-compose up -d
 fi
 
-# Wait for services to be ready
-echo "⏳ Waiting for services to be ready..."
-sleep 10
+# Wait for services to stabilize
+echo "⏳ Waiting for services to stabilize..."
+sleep 5
 
 # Check if services are healthy
 echo "✅ Checking service health..."
