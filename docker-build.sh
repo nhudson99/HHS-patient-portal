@@ -53,9 +53,14 @@ else
     docker-compose down -v 2>/dev/null || true
 fi
 
-# Build the Docker image
-echo "🔨 Building Docker image..."
-$DOCKER_CMD build -t hhs-patient-portal:latest .
+
+# Prune old images before building
+echo "🧹 Pruning old Docker images..."
+$DOCKER_CMD image prune -af
+
+# Build the Docker image with no cache
+echo "🔨 Building Docker image (no cache)..."
+$DOCKER_CMD build --no-cache -t hhs-patient-portal:latest .
 
 # Start the services
 echo "🚀 Starting services with Docker Compose..."

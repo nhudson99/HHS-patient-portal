@@ -75,8 +75,10 @@ def execute_query(query, params=None, fetch_one=False, fetch_all=False):
         
         if fetch_one:
             result = cursor.fetchone()
+            conn.commit()  # Commit after fetch for INSERT...RETURNING
         elif fetch_all:
             result = cursor.fetchall()
+            conn.commit()  # Commit after fetch
         else:
             conn.commit()
             result = cursor.rowcount

@@ -28,6 +28,7 @@ from api.db.connection import init_db_pool, close_db_pool
 from api.utils.session_manager import cleanup_expired_sessions
 from api.utils.audit_log import cleanup_old_audit_logs
 from api.routes.auth import auth_bp
+from api.routes.events import events_bp
 
 # Create Flask app
 app = Flask(__name__)
@@ -70,6 +71,7 @@ def health_check():
 
 # Register blueprints
 app.register_blueprint(auth_bp)
+app.register_blueprint(events_bp)
 
 # Apply rate limit to login
 limiter.limit("5 per 15 minutes")(auth_bp)

@@ -1,0 +1,4 @@
+ id | doctor_id | patient_id | event_type | title | description | event_date | start_time | end_time | color | is_all_day | created_at | updated_at 
+----+-----------+------------+------------+-------+-------------+------------+------------+----------+-------+------------+------------+------------
+(0 rows)
+

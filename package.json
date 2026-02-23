@@ -12,7 +12,8 @@
     "server": "npm run api",
     "server:ts": "tsx watch server/index.ts",
     "server:build": "tsc -p tsconfig.server.json",
-    "server:start": "node dist/server/index.js"
+    "server:start": "node dist/server/index.js",
+    "test": "vitest --ui"
   },
   "repository": {
     "type": "git",
@@ -31,6 +32,7 @@
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "crypto-js": "^4.2.0",
+    "date-fns": "^3.3.1",
     "dotenv": "^17.2.4",
     "express": "^5.2.1",
     "express-rate-limit": "^8.2.1",
@@ -48,9 +50,13 @@
     "@types/express-session": "^1.18.2",
     "@types/pg": "^8.16.0",
     "@vitejs/plugin-vue": "^6.0.4",
+    "@vitest/ui": "^4.0.18",
+    "@vue/test-utils": "^2.4.6",
+    "jsdom": "^28.1.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
-    "vue-tsc": "^3.2.4"
+    "vitest": "^4.0.18",
+    "vue-tsc": "^3.2.5"
   }
 }

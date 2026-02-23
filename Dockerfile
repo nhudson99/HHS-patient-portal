@@ -16,10 +16,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    postgresql-client \
-    curl \
+# Switch to a more stable Debian mirror in all apt sources and install system dependencies
+RUN find /etc/apt/ -name '*.list' -exec sed -i 's|deb.debian.org|ftp.us.debian.org|g' {} + \
+    && apt-get update \
+    && apt-get install -y --fix-missing postgresql-client curl \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Python requirements
