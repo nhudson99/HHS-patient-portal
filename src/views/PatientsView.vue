@@ -70,22 +70,104 @@
           </div>
         </div>
 
+        <div class="properties-section">
+          <div class="properties-header">
+            <h3>Patient Properties</h3>
+            <button class="add-btn" @click="openAddProperty">+ Add</button>
+          </div>
+
+          <div v-if="propertiesLoading" class="state">Loading properties...</div>
+          <div v-else-if="propertiesError" class="state error">{{ propertiesError }}</div>
+          <div v-else-if="patientProperties.length === 0" class="state">No properties yet.</div>
+
+          <div class="accordion" v-else>
+            <div
+              v-for="prop in patientProperties"
+              :key="prop.property_id"
+              class="accordion-item"
+            >
+              <button class="accordion-header" @click="toggleProperty(prop.property_id)">
+                <span>{{ prop.name }}</span>
+                <span class="accordion-actions">
+                  <span class="toggle-indicator">
+                    {{ expandedProperties.has(prop.property_id) ? '−' : '+' }}
+                  </span>
+                  <button class="delete-btn" @click.stop="confirmDelete(prop)">Delete</button>
+                </span>
+              </button>
+              <div v-if="expandedProperties.has(prop.property_id)" class="accordion-body">
+                {{ prop.description || '—' }}
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="detail-note">
           Future enhancement: editable patient details and clinical history.
         </div>
       </section>
     </div>
+
+    <div v-if="showAddDialog" class="modal-overlay" @click="closeAddDialog">
+      <div class="modal" @click.stop>
+        <div class="modal-header">
+          <h2>New Property</h2>
+          <button class="close-btn" @click="closeAddDialog">✕</button>
+        </div>
+        <div class="modal-content">
+          <div class="form-group">
+            <label>Name *</label>
+            <input v-model="propertyForm.name" type="text" placeholder="Property name" />
+          </div>
+          <div class="form-group">
+            <label>Description</label>
+            <textarea
+              v-model="propertyForm.description"
+              rows="4"
+              placeholder="Detailed notes"
+            ></textarea>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-secondary" @click="closeAddDialog">Cancel</button>
+          <button class="btn-primary" @click="saveProperty">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showDeleteConfirm" class="modal-overlay" @click="cancelDelete">
+      <div class="modal small" @click.stop>
+        <div class="modal-content">
+          <p>Delete property "{{ pendingDelete?.name }}"?</p>
+          <div class="modal-actions">
+            <button class="btn-danger" @click="deleteProperty">Delete</button>
+            <button class="btn-secondary" @click="cancelDelete">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import type { Patient } from '@/types'
+import { ref, computed, onMounted, watch } from 'vue'
+import type { Patient, PatientProperty } from '@/types'
 
 const patients = ref<Patient[]>([])
 const selectedPatientId = ref<string | null>(null)
 const loading = ref(false)
 const error = ref('')
+const patientProperties = ref<PatientProperty[]>([])
+const propertiesLoading = ref(false)
+const propertiesError = ref('')
+const expandedProperties = ref<Set<number>>(new Set())
+const showAddDialog = ref(false)
+const showDeleteConfirm = ref(false)
+const pendingDelete = ref<PatientProperty | null>(null)
+const propertyForm = ref({
+  name: '',
+  description: ''
+})
 
 const selectedPatient = computed(() =>
   patients.value.find(p => p.id === selectedPatientId.value) || null
@@ -93,6 +175,35 @@ const selectedPatient = computed(() =>
 
 function selectPatient(patient: Patient) {
   selectedPatientId.value = patient.id
+}
+
+function toggleProperty(propertyId: number) {
+  const next = new Set(expandedProperties.value)
+  if (next.has(propertyId)) {
+    next.delete(propertyId)
+  } else {
+    next.add(propertyId)
+  }
+  expandedProperties.value = next
+}
+
+function openAddProperty() {
+  propertyForm.value = { name: '', description: '' }
+  showAddDialog.value = true
+}
+
+function closeAddDialog() {
+  showAddDialog.value = false
+}
+
+function confirmDelete(prop: PatientProperty) {
+  pendingDelete.value = prop
+  showDeleteConfirm.value = true
+}
+
+function cancelDelete() {
+  pendingDelete.value = null
+  showDeleteConfirm.value = false
 }
 
 function formatDate(dateStr: string) {
@@ -128,8 +239,100 @@ async function loadPatients() {
   }
 }
 
+async function loadProperties() {
+  if (!selectedPatientId.value) {
+    patientProperties.value = []
+    return
+  }
+
+  propertiesLoading.value = true
+  propertiesError.value = ''
+  try {
+    const response = await fetch(`/api/patient-properties/${selectedPatientId.value}`, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+      }
+    })
+
+    if (!response.ok) {
+      propertiesError.value = 'Failed to load properties'
+      return
+    }
+
+    const data = await response.json()
+    patientProperties.value = data.properties || []
+    expandedProperties.value = new Set()
+  } catch (err) {
+    propertiesError.value = 'Failed to load properties'
+  } finally {
+    propertiesLoading.value = false
+  }
+}
+
+async function saveProperty() {
+  if (!selectedPatientId.value || !propertyForm.value.name.trim()) return
+
+  try {
+    const response = await fetch(`/api/patient-properties/${selectedPatientId.value}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+      },
+      body: JSON.stringify({
+        name: propertyForm.value.name.trim(),
+        description: propertyForm.value.description
+      })
+    })
+
+    if (!response.ok) {
+      propertiesError.value = 'Failed to add property'
+      return
+    }
+
+    const data = await response.json()
+    patientProperties.value = [...patientProperties.value, data.property]
+    expandedProperties.value = new Set(expandedProperties.value).add(data.property.property_id)
+    showAddDialog.value = false
+  } catch (err) {
+    propertiesError.value = 'Failed to add property'
+  }
+}
+
+async function deleteProperty() {
+  if (!selectedPatientId.value || !pendingDelete.value) return
+
+  try {
+    const response = await fetch(
+      `/api/patient-properties/${selectedPatientId.value}/${pendingDelete.value.property_id}`,
+      {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+        }
+      }
+    )
+
+    if (!response.ok) {
+      propertiesError.value = 'Failed to delete property'
+      return
+    }
+
+    patientProperties.value = patientProperties.value.filter(
+      prop => prop.property_id !== pendingDelete.value?.property_id
+    )
+    cancelDelete()
+  } catch (err) {
+    propertiesError.value = 'Failed to delete property'
+  }
+}
+
 onMounted(() => {
   loadPatients()
+})
+
+watch(selectedPatientId, () => {
+  loadProperties()
 })
 </script>
 
@@ -290,6 +493,178 @@ onMounted(() => {
   margin-top: 1.5rem;
   color: #6b7280;
   font-size: 0.9rem;
+}
+
+.properties-section {
+  margin-top: 2rem;
+}
+
+.properties-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.properties-header h3 {
+  margin: 0;
+}
+
+.add-btn {
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #4338ca;
+  border-radius: 6px;
+  padding: 0.4rem 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.accordion {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.accordion-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.accordion-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: #f9fafb;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.accordion-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.toggle-indicator {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.delete-btn {
+  border: none;
+  background: #fee2e2;
+  color: #dc2626;
+  padding: 0.35rem 0.7rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.accordion-body {
+  padding: 0.9rem 1rem;
+  background: white;
+  color: #374151;
+  line-height: 1.4;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.modal {
+  background: white;
+  border-radius: 10px;
+  width: 420px;
+  max-width: 90%;
+  padding: 1rem;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+}
+
+.modal.small {
+  width: 320px;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.close-btn {
+  border: none;
+  background: transparent;
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+.modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.form-group input,
+.form-group textarea {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+}
+
+.btn-primary {
+  background: #4338ca;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.btn-secondary {
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.btn-danger {
+  background: #dc2626;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
 }
 
 @media (max-width: 900px) {

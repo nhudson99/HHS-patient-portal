@@ -37,6 +37,15 @@ export interface Patient {
   updated_at?: string
 }
 
+export interface PatientProperty {
+  patient_id: string
+  property_id: number
+  name: string
+  description?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
 export interface MedicalDocument {
   id: number
   patientId: number
