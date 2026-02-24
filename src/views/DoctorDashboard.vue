@@ -1,16 +1,5 @@
 <template>
   <div class="doctor-dashboard">
-    <!-- Top Header with logout -->
-    <header class="top-header">
-      <div class="header-content">
-        <h1>🏥 Doctor Dashboard</h1>
-        <div class="user-actions">
-          <span class="user-name">{{ userName }}</span>
-          <button @click="handleLogout" class="logout-btn">Logout</button>
-        </div>
-      </div>
-    </header>
-
     <!-- Calendar controls -->
     <div class="dashboard-header">
       <div class="controls">
@@ -251,9 +240,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import { logout } from '@/store'
+import { ref, onMounted, watch } from 'vue'
 import { 
   format, 
   startOfWeek, 
@@ -299,31 +286,9 @@ interface EventForm {
   is_all_day: boolean
 }
 
-const router = useRouter()
-
 const viewMode = ref<'day' | 'week' | 'month'>('month')
 const currentDate = ref(new Date())
 const events = ref<Event[]>([])
-
-const userName = computed(() => {
-  const userStr = localStorage.getItem('currentUser')
-  if (userStr) {
-    try {
-      const user = JSON.parse(userStr)
-      return user.name || user.username || 'Doctor'
-    } catch {
-      return 'Doctor'
-    }
-  }
-  return 'Doctor'
-})
-
-function handleLogout() {
-  logout()
-  localStorage.removeItem('sessionToken')
-  localStorage.removeItem('currentUser')
-  router.push('/')
-}
 const showEventModal = ref(false)
 const showConfirmDelete = ref(false)
 const showContextMenu = ref(false)
@@ -634,49 +599,6 @@ onMounted(() => {
   min-height: 100vh;
 }
 
-.top-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 1rem 2rem;
-  margin-bottom: 0;
-}
-
-.top-header .header-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
-.top-header h1 {
-  margin: 0;
-  font-size: 1.5rem;
-}
-
-.user-actions {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.user-name {
-  font-weight: 500;
-}
-
-.logout-btn {
-  padding: 0.5rem 1rem;
-  background: rgba(255,255,255,0.2);
-  color: white;
-  border: 1px solid white;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.logout-btn:hover {
-  background: rgba(255,255,255,0.3);
-}
 
 .dashboard-header {
   display: flex;

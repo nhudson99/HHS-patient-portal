@@ -22,6 +22,21 @@ export interface Appointment {
   checkInTime?: string
 }
 
+export interface Patient {
+  id: string
+  user_id?: string | null
+  first_name: string
+  last_name: string
+  date_of_birth: string
+  phone: string
+  address?: string | null
+  emergency_contact_name?: string | null
+  emergency_contact_phone?: string | null
+  portal_email?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
 export interface MedicalDocument {
   id: number
   patientId: number

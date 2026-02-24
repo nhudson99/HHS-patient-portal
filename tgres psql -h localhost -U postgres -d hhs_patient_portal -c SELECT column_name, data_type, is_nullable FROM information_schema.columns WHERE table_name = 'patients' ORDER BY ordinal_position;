@@ -1,0 +1,27 @@
+                                      Table "public.patients"
+         Column          |            Type             | Collation | Nullable |      Default       
+-------------------------+-----------------------------+-----------+----------+--------------------
+ id                      | uuid                        |           | not null | uuid_generate_v4()
+ user_id                 | uuid                        |           | not null | 
+ first_name              | character varying(255)      |           | not null | 
+ last_name               | character varying(255)      |           | not null | 
+ date_of_birth           | date                        |           | not null | 
+ phone                   | character varying(20)       |           |          | 
+ address                 | text                        |           |          | 
+ emergency_contact_name  | character varying(255)      |           |          | 
+ emergency_contact_phone | character varying(20)       |           |          | 
+ created_at              | timestamp without time zone |           |          | CURRENT_TIMESTAMP
+ updated_at              | timestamp without time zone |           |          | CURRENT_TIMESTAMP
+Indexes:
+    "patients_pkey" PRIMARY KEY, btree (id)
+    "idx_patients_user_id" btree (user_id)
+    "patients_user_id_key" UNIQUE CONSTRAINT, btree (user_id)
+Foreign-key constraints:
+    "patients_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+Referenced by:
+    TABLE "appointments" CONSTRAINT "appointments_patient_id_fkey" FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+    TABLE "events" CONSTRAINT "events_patient_id_fkey" FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE SET NULL
+    TABLE "medical_documents" CONSTRAINT "medical_documents_patient_id_fkey" FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+Triggers:
+    update_patients_updated_at BEFORE UPDATE ON patients FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()
+
