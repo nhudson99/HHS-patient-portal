@@ -31,10 +31,12 @@ from api.routes.auth import auth_bp
 from api.routes.events import events_bp
 from api.routes.patients import patients_bp
 from api.routes.patient_properties import patient_properties_bp
+from api.routes.documents import documents_bp
 
 # Create Flask app
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SESSION_SECRET', 'dev-secret-change-in-production')
+app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20MB max upload size
 
 # Security middleware - HIPAA compliance
 if os.getenv('NODE_ENV') == 'production':
@@ -76,6 +78,7 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(events_bp)
 app.register_blueprint(patients_bp)
 app.register_blueprint(patient_properties_bp)
+app.register_blueprint(documents_bp)
 
 # Apply rate limit to login
 limiter.limit("5 per 15 minutes")(auth_bp)

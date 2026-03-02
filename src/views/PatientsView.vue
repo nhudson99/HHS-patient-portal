@@ -72,7 +72,7 @@
 
         <div class="properties-section">
           <div class="properties-header">
-            <h3>Patient Properties</h3>
+            <h3>Notes</h3>
             <button class="add-btn" @click="openAddProperty">+ Add</button>
           </div>
 
@@ -99,6 +99,57 @@
                 {{ prop.description || '—' }}
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- Documents Section -->
+        <div class="documents-section">
+          <div class="documents-header">
+            <h3>Documents</h3>
+            <button class="add-btn" @click="triggerFileUpload">+ Upload</button>
+            <input
+              ref="fileInput"
+              type="file"
+              multiple
+              style="display: none"
+              @change="handleFileUpload"
+            />
+          </div>
+
+          <div v-if="documentsLoading" class="state">Loading documents...</div>
+          <div v-else-if="documentsError" class="state error">{{ documentsError }}</div>
+          <div v-else-if="documents.length === 0" class="state">No documents yet.</div>
+
+          <div class="documents-list" v-else>
+            <div
+              v-for="doc in documents"
+              :key="doc.id"
+              class="document-item"
+            >
+              <div class="document-info">
+                <a
+                  :href="`/api/documents/download/${doc.id}`"
+                  class="document-link"
+                  @click.prevent="downloadDocument(doc)"
+                >
+                  <span class="doc-icon">📄</span>
+                  {{ doc.title }}
+                </a>
+                <span class="document-size">{{ formatFileSize(doc.file_size) }}</span>
+              </div>
+              <div class="document-actions">
+                <button class="icon-btn rename-btn" @click="openRenameDialog(doc)" title="Rename">
+                  ✏️
+                </button>
+                <button class="icon-btn delete-btn-icon" @click="confirmDeleteDocument(doc)" title="Delete">
+                  🗑️
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="uploadProgress" class="upload-progress">
+            <span>Uploading...</span>
           </div>
         </div>
 
@@ -146,12 +197,45 @@
         </div>
       </div>
     </div>
+
+    <!-- Rename Document Modal -->
+    <div v-if="showRenameDialog" class="modal-overlay" @click="closeRenameDialog">
+      <div class="modal" @click.stop>
+        <div class="modal-header">
+          <h2>Rename Document</h2>
+          <button class="close-btn" @click="closeRenameDialog">✕</button>
+        </div>
+        <div class="modal-content">
+          <div class="form-group">
+            <label>Title</label>
+            <input v-model="renameForm.title" type="text" placeholder="Document title" />
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-secondary" @click="closeRenameDialog">Cancel</button>
+          <button class="btn-primary" @click="renameDocument">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delete Document Confirmation -->
+    <div v-if="showDeleteDocConfirm" class="modal-overlay" @click="cancelDeleteDocument">
+      <div class="modal small" @click.stop>
+        <div class="modal-content">
+          <p>Delete document "{{ pendingDeleteDoc?.title }}"?</p>
+          <div class="modal-actions">
+            <button class="btn-danger" @click="deleteDocument">Delete</button>
+            <button class="btn-secondary" @click="cancelDeleteDocument">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import type { Patient, PatientProperty } from '@/types'
+import type { Patient, PatientProperty, PatientDocument } from '@/types'
 
 const patients = ref<Patient[]>([])
 const selectedPatientId = ref<string | null>(null)
@@ -167,6 +251,20 @@ const pendingDelete = ref<PatientProperty | null>(null)
 const propertyForm = ref({
   name: '',
   description: ''
+})
+
+// Documents state
+const documents = ref<PatientDocument[]>([])
+const documentsLoading = ref(false)
+const documentsError = ref('')
+const uploadProgress = ref(false)
+const fileInput = ref<HTMLInputElement | null>(null)
+const showRenameDialog = ref(false)
+const showDeleteDocConfirm = ref(false)
+const pendingDeleteDoc = ref<PatientDocument | null>(null)
+const renameForm = ref({
+  id: '',
+  title: ''
 })
 
 const selectedPatient = computed(() =>
@@ -333,7 +431,197 @@ onMounted(() => {
 
 watch(selectedPatientId, () => {
   loadProperties()
+  loadDocuments()
 })
+
+// Document functions
+async function loadDocuments() {
+  if (!selectedPatientId.value) {
+    documents.value = []
+    return
+  }
+
+  documentsLoading.value = true
+  documentsError.value = ''
+  try {
+    const response = await fetch(`/api/documents/${selectedPatientId.value}`, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+      }
+    })
+
+    if (!response.ok) {
+      documentsError.value = 'Failed to load documents'
+      return
+    }
+
+    const data = await response.json()
+    documents.value = data.documents || []
+  } catch (err) {
+    documentsError.value = 'Failed to load documents'
+  } finally {
+    documentsLoading.value = false
+  }
+}
+
+function triggerFileUpload() {
+  fileInput.value?.click()
+}
+
+async function handleFileUpload(event: Event) {
+  const target = event.target as HTMLInputElement
+  const files = target.files
+  
+  if (!files || files.length === 0 || !selectedPatientId.value) return
+  
+  uploadProgress.value = true
+  documentsError.value = ''
+  
+  try {
+    const formData = new FormData()
+    for (let i = 0; i < files.length; i++) {
+      formData.append('files', files[i])
+    }
+    
+    const response = await fetch(`/api/documents/${selectedPatientId.value}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+      },
+      body: formData
+    })
+    
+    if (!response.ok) {
+      const data = await response.json()
+      documentsError.value = data.error || 'Failed to upload files'
+      return
+    }
+    
+    const data = await response.json()
+    documents.value = [...data.documents, ...documents.value]
+    
+    if (data.errors && data.errors.length > 0) {
+      documentsError.value = data.errors.join(', ')
+    }
+  } catch (err) {
+    documentsError.value = 'Failed to upload files'
+  } finally {
+    uploadProgress.value = false
+    // Reset file input
+    if (fileInput.value) {
+      fileInput.value.value = ''
+    }
+  }
+}
+
+async function downloadDocument(doc: PatientDocument) {
+  try {
+    const response = await fetch(`/api/documents/download/${doc.id}`, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+      }
+    })
+    
+    if (!response.ok) {
+      documentsError.value = 'Failed to download document'
+      return
+    }
+    
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = doc.title || doc.file_name
+    document.body.appendChild(a)
+    a.click()
+    window.URL.revokeObjectURL(url)
+    document.body.removeChild(a)
+  } catch (err) {
+    documentsError.value = 'Failed to download document'
+  }
+}
+
+function openRenameDialog(doc: PatientDocument) {
+  renameForm.value = { id: doc.id, title: doc.title }
+  showRenameDialog.value = true
+}
+
+function closeRenameDialog() {
+  showRenameDialog.value = false
+}
+
+async function renameDocument() {
+  if (!renameForm.value.title.trim()) return
+  
+  try {
+    const response = await fetch(`/api/documents/${renameForm.value.id}/rename`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+      },
+      body: JSON.stringify({ title: renameForm.value.title.trim() })
+    })
+    
+    if (!response.ok) {
+      documentsError.value = 'Failed to rename document'
+      return
+    }
+    
+    const data = await response.json()
+    const idx = documents.value.findIndex(d => d.id === renameForm.value.id)
+    if (idx !== -1) {
+      documents.value[idx] = data.document
+    }
+    showRenameDialog.value = false
+  } catch (err) {
+    documentsError.value = 'Failed to rename document'
+  }
+}
+
+function confirmDeleteDocument(doc: PatientDocument) {
+  pendingDeleteDoc.value = doc
+  showDeleteDocConfirm.value = true
+}
+
+function cancelDeleteDocument() {
+  pendingDeleteDoc.value = null
+  showDeleteDocConfirm.value = false
+}
+
+async function deleteDocument() {
+  if (!pendingDeleteDoc.value) return
+  
+  try {
+    const response = await fetch(`/api/documents/${pendingDeleteDoc.value.id}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+      }
+    })
+    
+    if (!response.ok) {
+      documentsError.value = 'Failed to delete document'
+      return
+    }
+    
+    documents.value = documents.value.filter(d => d.id !== pendingDeleteDoc.value?.id)
+    cancelDeleteDocument()
+  } catch (err) {
+    documentsError.value = 'Failed to delete document'
+  }
+}
+
+function formatFileSize(bytes: number): string {
+  if (!bytes || bytes === 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  let i = 0
+  while (bytes >= 1024 && i < units.length - 1) {
+    bytes /= 1024
+    i++
+  }
+  return `${bytes.toFixed(1)} ${units[i]}`
+}
 </script>
 
 <style scoped>
@@ -665,6 +953,109 @@ watch(selectedPatientId, () => {
   padding: 0.5rem 1rem;
   border-radius: 6px;
   cursor: pointer;
+}
+
+/* Documents Section */
+.documents-section {
+  margin-top: 2rem;
+}
+
+.documents-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.documents-header h3 {
+  margin: 0;
+}
+
+.documents-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.document-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.document-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.document-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #4338ca;
+  text-decoration: none;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-link:hover {
+  text-decoration: underline;
+}
+
+.doc-icon {
+  flex-shrink: 0;
+}
+
+.document-size {
+  color: #6b7280;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.document-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.icon-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  font-size: 1rem;
+  transition: background 0.15s;
+}
+
+.icon-btn:hover {
+  background: #e5e7eb;
+}
+
+.rename-btn:hover {
+  background: #dbeafe;
+}
+
+.delete-btn-icon:hover {
+  background: #fee2e2;
+}
+
+.upload-progress {
+  margin-top: 0.75rem;
+  padding: 0.5rem;
+  background: #eef2ff;
+  border-radius: 6px;
+  color: #4338ca;
+  font-size: 0.9rem;
+  text-align: center;
 }
 
 @media (max-width: 900px) {

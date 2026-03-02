@@ -46,6 +46,21 @@ export interface PatientProperty {
   updated_at?: string
 }
 
+export interface PatientDocument {
+  id: string
+  patient_id: string
+  doctor_id?: string | null
+  document_type: string
+  title: string
+  description?: string | null
+  file_path?: string
+  file_name: string
+  file_size: number
+  document_date: string
+  created_at?: string
+  updated_at?: string
+}
+
 export interface MedicalDocument {
   id: number
   patientId: number
