@@ -50,6 +50,7 @@ const loadUser = () => {
 }
 
 const showHeader = computed(() => {
+  // Show header for all authenticated routes
   return !!currentUser.value && route.path !== '/'
 })
 
@@ -74,7 +75,10 @@ const navButtons = computed<NavButton[]>(() => {
     ]
   }
   if (currentUser.value.role === 'patient') {
-    return [{ label: 'Home', to: '/patient' }]
+    return [
+      { label: 'Home', to: '/patient' },
+      { label: 'Check In', to: '/checkin' }
+    ]
   }
   return []
 })

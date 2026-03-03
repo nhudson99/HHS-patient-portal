@@ -32,6 +32,7 @@ from api.routes.events import events_bp
 from api.routes.patients import patients_bp
 from api.routes.patient_properties import patient_properties_bp
 from api.routes.documents import documents_bp
+from api.routes.appointments import appointments_bp
 
 # Create Flask app
 app = Flask(__name__)
@@ -54,14 +55,18 @@ CORS(app,
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
-    default_limits=["100 per 15 minutes"],
-    storage_uri="memory://"
+    default_limits=["200 per minute", "1000 per hour"],
+    storage_uri="memory://",
+    default_limits_exempt_when=lambda: False
 )
+
+# Make limiter available for import in other modules
+app.limiter = limiter
 
 # Apply specific rate limiting to login
 @app.before_request
 def before_request():
-    """Add rate limiting to login endpoint"""
+    """Rate limiting is handled by decorator on specific routes"""
     pass
 
 # Health check endpoint
@@ -79,9 +84,7 @@ app.register_blueprint(events_bp)
 app.register_blueprint(patients_bp)
 app.register_blueprint(patient_properties_bp)
 app.register_blueprint(documents_bp)
-
-# Apply rate limit to login
-limiter.limit("5 per 15 minutes")(auth_bp)
+app.register_blueprint(appointments_bp)
 
 # Error handlers
 @app.errorhandler(404)

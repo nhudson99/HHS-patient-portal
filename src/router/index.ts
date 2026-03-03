@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
-import { getCurrentUser } from '@/store'
+import { getCurrentUser, validateSession } from '@/store'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -38,9 +38,18 @@ const router = createRouter({
   routes
 })
 
-// Navigation guard
-router.beforeEach((to, _from, next) => {
+// Navigation guard with session validation
+router.beforeEach(async (to, _from, next) => {
   const user = getCurrentUser()
+  
+  // Validate session token for protected routes
+  if (to.meta.requiresAuth) {
+    const isValid = await validateSession()
+    if (!isValid) {
+      next('/')
+      return
+    }
+  }
   
   if (to.meta.requiresAuth && !user) {
     next('/')

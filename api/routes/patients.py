@@ -23,6 +23,42 @@ def serialize_patient(patient):
     return result
 
 
+def serialize_doctor(doctor):
+    if not doctor:
+        return None
+    result = dict(doctor)
+    for key, value in result.items():
+        if isinstance(value, datetime):
+            result[key] = value.isoformat()
+        elif isinstance(value, date):
+            result[key] = value.isoformat()
+    return result
+
+
+@patients_bp.route('/doctors', methods=['GET'])
+@authenticate
+def list_doctors():
+    try:
+        user = request.user
+        if user.get('role') not in ['patient', 'doctor']:
+            return jsonify({'error': 'Insufficient permissions'}), 403
+
+        query = """
+            SELECT d.id, d.user_id, d.first_name, d.last_name, d.specialty,
+                   d.phone, d.office_address, d.created_at, d.updated_at,
+                   u.email AS portal_email
+            FROM doctors d
+            LEFT JOIN users u ON d.user_id = u.id
+            ORDER BY d.last_name, d.first_name
+        """
+        doctors = execute_query(query, fetch_all=True) or []
+        return jsonify({'doctors': [serialize_doctor(d) for d in doctors]}), 200
+
+    except Exception as e:
+        print(f"Doctors retrieval error: {e}")
+        return jsonify({'error': 'Failed to retrieve doctors'}), 500
+
+
 @patients_bp.route('', methods=['GET'])
 @authenticate
 def list_patients():

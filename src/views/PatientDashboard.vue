@@ -1,16 +1,5 @@
 <template>
   <div class="dashboard">
-    <header class="header">
-      <div class="header-content">
-        <h1>🏥 Patient Portal</h1>
-        <div class="user-info">
-          <button @click="goToCheckIn" class="checkin-button-header">Check In</button>
-          <span>Welcome, {{ currentUser?.name }}</span>
-          <button @click="handleLogout" class="logout-button">Logout</button>
-        </div>
-      </div>
-    </header>
-
     <div class="main-content">
       <div class="tabs">
         <button 
@@ -39,7 +28,10 @@
       <!-- My Appointments Tab -->
       <div v-if="activeTab === 'appointments'" class="tab-content">
         <h2>My Appointments</h2>
-        <div v-if="appointments.length === 0" class="empty-state">
+        <div v-if="appointmentsLoading" class="empty-state">
+          <p>Loading appointments...</p>
+        </div>
+        <div v-else-if="appointments.length === 0" class="empty-state">
           <p>No appointments scheduled</p>
         </div>
         <div v-else class="appointments-list">
@@ -51,15 +43,14 @@
           >
             <div class="appointment-header">
               <div class="appointment-date">
-                <span class="date">{{ formatDate(appointment.date) }}</span>
-                <span class="time">{{ appointment.time }}</span>
+                <span class="date">{{ formatDateTime(appointment.appointment_date) }}</span>
               </div>
               <span class="status-badge" :class="appointment.status">
                 {{ appointment.status.toUpperCase() }}
               </span>
             </div>
             <div class="appointment-body">
-              <h3>Dr. {{ appointment.doctorName }}</h3>
+              <h3>{{ appointment.doctor_name ? `Dr. ${appointment.doctor_name}` : 'Doctor Appointment' }}</h3>
               <p class="reason">{{ appointment.reason }}</p>
             </div>
           </div>
@@ -74,7 +65,13 @@
             <label for="doctor">Select Doctor</label>
             <select id="doctor" v-model="appointmentForm.doctorId" required>
               <option value="">Choose a doctor...</option>
-              <option value="1">Dr. Sarah Johnson</option>
+              <option 
+                v-for="doctor in doctors" 
+                :key="doctor.id"
+                :value="doctor.id"
+              >
+                Dr. {{ doctor.name }}
+              </option>
             </select>
           </div>
 
@@ -114,6 +111,10 @@
 
           <button type="submit" class="submit-button">Submit Request</button>
 
+          <div v-if="requestError" class="error-message">
+            {{ requestError }}
+          </div>
+
           <div v-if="requestSuccess" class="success-message">
             ✓ Appointment request submitted successfully! It will appear in your appointments list as pending.
           </div>
@@ -123,7 +124,10 @@
       <!-- Medical Documents Tab -->
       <div v-if="activeTab === 'documents'" class="tab-content">
         <h2>Medical Documents</h2>
-        <div v-if="documents.length === 0" class="empty-state">
+        <div v-if="documentsLoading" class="empty-state">
+          <p>Loading documents...</p>
+        </div>
+        <div v-else-if="documents.length === 0" class="empty-state">
           <p>No medical documents available</p>
         </div>
         <div v-else class="documents-list">
@@ -134,21 +138,20 @@
           >
             <div class="document-header">
               <div>
-                <span class="document-icon">{{ getDocumentIcon(document.type) }}</span>
+                <span class="document-icon">{{ getDocumentIcon(document.document_type) }}</span>
                 <h3>{{ document.title }}</h3>
               </div>
-              <span class="document-date">{{ formatDate(document.date) }}</span>
+              <span class="document-date">{{ formatDateTime(document.document_date) }}</span>
             </div>
-            <div class="document-type">{{ formatDocumentType(document.type) }}</div>
-            <div class="document-content">{{ document.content }}</div>
+            <div class="document-type">{{ formatDocumentType(document.document_type) }}</div>
+            <div v-if="document.description" class="document-description">{{ document.description }}</div>
             <div class="document-actions">
-              <a 
-                href="/testDoc.pdf" 
-                download 
+              <button 
+                @click="downloadDocument(document)"
                 class="download-link"
               >
-                📥 Download PDF
-              </a>
+                📥 Download {{ getFileExtension(document.file_name) }}
+              </button>
             </div>
           </div>
         </div>
@@ -160,22 +163,17 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { 
-  getCurrentUser, 
-  getAppointmentsForPatient, 
-  getDocumentsForPatient,
-  createAppointmentRequest,
-  getDoctorName,
-  logout 
-} from '@/store'
-import type { Appointment, MedicalDocument } from '@/types'
 
 const router = useRouter()
-const currentUser = ref(getCurrentUser())
 const activeTab = ref('appointments')
-const appointments = ref<Appointment[]>([])
-const documents = ref<MedicalDocument[]>([])
+const appointments = ref<any[]>([])
+const documents = ref<any[]>([])
+const doctors = ref<any[]>([])
 const requestSuccess = ref(false)
+const requestError = ref('')
+const appointmentsLoading = ref(false)
+const documentsLoading = ref(false)
+const doctorsLoading = ref(false)
 
 const appointmentForm = ref({
   doctorId: '',
@@ -191,39 +189,140 @@ const minDate = computed(() => {
 
 const sortedAppointments = computed(() => {
   return [...appointments.value].sort((a, b) => {
-    const dateA = new Date(a.date + ' ' + a.time)
-    const dateB = new Date(b.date + ' ' + b.time)
+    const dateA = new Date(a.appointment_date)
+    const dateB = new Date(b.appointment_date)
     return dateB.getTime() - dateA.getTime()
   })
 })
 
 const sortedDocuments = computed(() => {
   return [...documents.value].sort((a, b) => {
-    const dateA = new Date(a.date)
-    const dateB = new Date(b.date)
+    const dateA = new Date(a.document_date || a.created_at)
+    const dateB = new Date(b.document_date || b.created_at)
     return dateB.getTime() - dateA.getTime()
   })
 })
 
-const loadData = () => {
-  if (currentUser.value) {
-    appointments.value = getAppointmentsForPatient(currentUser.value.id)
-    documents.value = getDocumentsForPatient(currentUser.value.id)
+// Load appointments from API
+const loadAppointments = async () => {
+  appointmentsLoading.value = true
+  try {
+    const response = await fetch('/api/appointments/patient', {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+      }
+    })
+    
+    if (!response.ok) {
+      console.error('Failed to load appointments')
+      return
+    }
+    
+    const data = await response.json()
+    appointments.value = data.appointments || []
+  } catch (err) {
+    console.error('Load appointments error:', err)
+  } finally {
+    appointmentsLoading.value = false
   }
 }
 
-const handleAppointmentRequest = () => {
-  if (currentUser.value && appointmentForm.value.doctorId) {
-    const doctorId = parseInt(appointmentForm.value.doctorId)
-    createAppointmentRequest(
-      currentUser.value.id,
-      currentUser.value.name || currentUser.value.username || 'Patient',
-      doctorId,
-      getDoctorName(doctorId),
-      appointmentForm.value.date,
-      appointmentForm.value.time,
-      appointmentForm.value.reason
-    )
+// Load documents from API
+const loadDocuments = async () => {
+  if (!currentUser.value) return
+  
+  documentsLoading.value = true
+  try {
+    // First, need to get patient ID - use a helper endpoint or get from user profile
+    // For now, we'll need to fetch patient info from /api/patients/{id}
+    const patientsResponse = await fetch('/api/patients', {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+      }
+    })
+    
+    if (!patientsResponse.ok) {
+      console.error('Failed to get patient info')
+      return
+    }
+    
+    const patientsData = await patientsResponse.json()
+    const currentPatient = patientsData.patients?.[0]
+    
+    if (!currentPatient) return
+    
+    const response = await fetch(`/api/documents/${currentPatient.id}`, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+      }
+    })
+    
+    if (!response.ok) {
+      console.error('Failed to load documents')
+      return
+    }
+    
+    const data = await response.json()
+    documents.value = data.documents || []
+  } catch (err) {
+    console.error('Load documents error:', err)
+  } finally {
+    documentsLoading.value = false
+  }
+}
+
+// Load available doctors
+const loadDoctors = async () => {
+  doctorsLoading.value = true
+  try {
+    const response = await fetch('/api/patients/doctors', {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+      }
+    })
+    
+    if (!response.ok) return
+
+    const data = await response.json()
+    doctors.value = (data.doctors || []).map((doctor: any) => ({
+      id: doctor.id,
+      name: `${doctor.first_name} ${doctor.last_name}`
+    }))
+  } catch (err) {
+    console.error('Load doctors error:', err)
+  } finally {
+    doctorsLoading.value = false
+  }
+}
+
+const handleAppointmentRequest = async () => {
+  if (!currentUser.value || !appointmentForm.value.doctorId) {
+    requestError.value = 'Please fill in all fields'
+    return
+  }
+  
+  try {
+    requestError.value = ''
+    
+    const response = await fetch('/api/appointments/request', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+      },
+      body: JSON.stringify({
+        doctor_id: appointmentForm.value.doctorId,
+        appointment_date: appointmentForm.value.date,
+        appointment_time: appointmentForm.value.time,
+        reason: appointmentForm.value.reason
+      })
+    })
+    
+    if (!response.ok) {
+      const error = await response.json()
+      requestError.value = error.error || 'Failed to request appointment'
+      return
+    }
     
     // Reset form
     appointmentForm.value = {
@@ -240,21 +339,55 @@ const handleAppointmentRequest = () => {
     }, 5000)
     
     // Reload appointments
-    loadData()
+    await loadAppointments()
     
     // Switch to appointments tab
     setTimeout(() => {
       activeTab.value = 'appointments'
     }, 2000)
+  } catch (err) {
+    requestError.value = 'An error occurred while requesting appointment'
+    console.error('Appointment request error:', err)
   }
 }
 
-const formatDate = (dateStr: string) => {
+const downloadDocument = async (doc: any) => {
+  try {
+    const response = await fetch(`/api/documents/download/${doc.id}`, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+      }
+    })
+    
+    if (!response.ok) {
+      console.error('Failed to download document')
+      return
+    }
+    
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = doc.title || doc.file_name || 'document'
+    document.body.appendChild(a)
+    a.click()
+    window.URL.revokeObjectURL(url)
+    document.body.removeChild(a)
+  } catch (err) {
+    console.error('Download error:', err)
+  }
+}
+
+const formatDateTime = (dateStr: string) => {
+  if (!dateStr) return '—'
   const date = new Date(dateStr)
-  return date.toLocaleDateString('en-US', { 
-    year: 'numeric', 
-    month: 'short', 
-    day: 'numeric' 
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  }) + ' at ' + date.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit'
   })
 }
 
@@ -263,6 +396,7 @@ const formatDocumentType = (type: string) => {
     lab_result: 'Laboratory Result',
     prescription: 'Prescription',
     imaging: 'Imaging Report',
+    document: 'Document',
     other: 'Other Document'
   }
   return types[type] || type
@@ -273,18 +407,27 @@ const getDocumentIcon = (type: string) => {
     lab_result: '🧪',
     prescription: '💊',
     imaging: '🔬',
+    document: '📄',
     other: '📋'
   }
   return icons[type] || '📄'
 }
 
-const handleLogout = () => {
-  logout()
-  router.push('/')
+const getFileExtension = (fileName: string) => {
+  if (!fileName) return 'File'
+  const parts = fileName.split('.')
+  if (parts.length > 1) {
+    return parts[parts.length - 1].toUpperCase()
+  }
+  return 'File'
 }
 
-const goToCheckIn = () => {
-  router.push('/checkin')
+const loadData = async () => {
+  await Promise.all([
+    loadAppointments(),
+    loadDocuments(),
+    loadDoctors()
+  ])
 }
 
 onMounted(() => {
@@ -296,62 +439,6 @@ onMounted(() => {
 .dashboard {
   min-height: 100vh;
   background: #f5f7fa;
-}
-
-.header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 20px 0;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-}
-
-.header-content {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.header h1 {
-  font-size: 28px;
-  margin: 0;
-}
-
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-}
-
-.logout-button {
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
-  border: 1px solid white;
-  padding: 8px 20px;
-  border-radius: 6px;
-  font-size: 14px;
-  transition: background 0.3s;
-}
-
-.logout-button:hover {
-  background: rgba(255, 255, 255, 0.3);
-}
-
-.checkin-button-header {
-  background: rgba(255, 255, 255, 0.3);
-  color: white;
-  border: 1px solid white;
-  padding: 8px 20px;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 600;
-  transition: background 0.3s;
-}
-
-.checkin-button-header:hover {
-  background: rgba(255, 255, 255, 0.4);
 }
 
 .main-content {
@@ -545,6 +632,15 @@ textarea {
   padding: 15px;
   background: #e8f5e9;
   color: #2e7d32;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.error-message {
+  margin-top: 20px;
+  padding: 15px;
+  background: #ffebee;
+  color: #c62828;
   border-radius: 6px;
   font-size: 14px;
 }

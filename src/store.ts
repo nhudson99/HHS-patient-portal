@@ -89,6 +89,35 @@ export const medicalDocuments: MedicalDocument[] = [
 // Current logged in user
 export let currentUser: User | null = null
 
+// API helper to validate session and auto-logout on expiration
+export async function validateSession(): Promise<boolean> {
+  const token = localStorage.getItem('sessionToken')
+  if (!token) {
+    logout()
+    return false
+  }
+
+  try {
+    const response = await fetch('/api/auth/me', {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+
+    if (!response.ok) {
+      // Session expired or invalid - auto logout
+      logout()
+      return false
+    }
+
+    return true
+  } catch (error) {
+    console.error('Session validation error:', error)
+    logout()
+    return false
+  }
+}
+
 // Initialize from localStorage if available
 const storedUser = localStorage.getItem('currentUser')
 if (storedUser) {

@@ -81,13 +81,18 @@ def serialize_document(doc):
 def list_documents(patient_id):
     """
     GET /api/documents/<patient_id>
-    List all documents for a patient
+    List all documents for a patient (patients view own, doctors view any)
     """
     try:
         user = request.user
         
-        # Only doctors can view documents (for now)
-        if user.get('role') != 'doctor':
+        # Verify authorization: patients can only view their own docs
+        if user.get('role') == 'patient':
+            patient_query = "SELECT id FROM patients WHERE user_id = %s"
+            patient = execute_query(patient_query, (user['id'],), fetch_one=True)
+            if not patient or patient['id'] != patient_id:
+                return jsonify({'error': 'Insufficient permissions'}), 403
+        elif user.get('role') != 'doctor':
             return jsonify({'error': 'Insufficient permissions'}), 403
         
         query = """
@@ -283,20 +288,26 @@ def delete_document(doc_id):
 def download_document(doc_id):
     """
     GET /api/documents/download/<doc_id>
-    Download a document file
+    Download a document file (patient or doctor)
     """
     try:
         user = request.user
         
-        if user.get('role') != 'doctor':
-            return jsonify({'error': 'Insufficient permissions'}), 403
-        
         # Get document
-        query = "SELECT file_path, file_name, title FROM medical_documents WHERE id = %s"
+        query = "SELECT id, file_path, file_name, title, patient_id FROM medical_documents WHERE id = %s"
         doc = execute_query(query, (doc_id,), fetch_one=True)
         
         if not doc:
             return jsonify({'error': 'Document not found'}), 404
+        
+        # Patient can only download their own documents
+        if user.get('role') == 'patient':
+            patient_query = "SELECT id FROM patients WHERE user_id = %s"
+            patient = execute_query(patient_query, (user['id'],), fetch_one=True)
+            if not patient or patient['id'] != doc['patient_id']:
+                return jsonify({'error': 'Insufficient permissions'}), 403
+        elif user.get('role') != 'doctor':
+            return jsonify({'error': 'Insufficient permissions'}), 403
         
         file_path = Path(doc['file_path'])
         

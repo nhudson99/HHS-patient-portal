@@ -7,8 +7,46 @@
       <h2>Patient Check-In</h2>
       <p class="subtitle">Hudson Health System</p>
 
-      <!-- Check-in with credentials -->
-      <div v-if="!showGuestForm && !checkedIn" class="checkin-options">
+      <!-- Logged-in patient view with next appointment -->
+      <div v-if="isLoggedInPatient && !checkedIn" class="logged-in-checkin">
+        <div v-if="loading" class="loading-state">
+          <p>Loading your appointment...</p>
+        </div>
+        <div v-else-if="nextAppointment" class="appointment-info">
+          <h3>Your Next Appointment</h3>
+          <div class="appointment-card">
+            <div class="detail-row">
+              <span class="label">Date & Time:</span>
+              <span class="value">{{ formatDateTime(nextAppointment.appointment_date) }}</span>
+            </div>
+            <div v-if="nextAppointment.doctor_name" class="detail-row">
+              <span class="label">Doctor:</span>
+              <span class="value">Dr. {{ nextAppointment.doctor_name }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="label">Reason:</span>
+              <span class="value">{{ nextAppointment.reason }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="label">Status:</span>
+              <span class="value status-badge" :class="nextAppointment.status">
+                {{ nextAppointment.status.toUpperCase() }}
+              </span>
+            </div>
+          </div>
+          <button @click="handleLoggedInCheckIn" class="checkin-button" :disabled="loading">
+            {{ loading ? 'Checking In...' : 'Check In Now' }}
+          </button>
+          <button @click="router.push('/patient')" class="back-button">Back to Dashboard</button>
+        </div>
+        <div v-else-if="!loading" class="no-appointment">
+          <p>{{ error || 'No upcoming appointments found.' }}</p>
+          <button @click="router.push('/patient')" class="back-button">Back to Dashboard</button>
+        </div>
+      </div>
+
+      <!-- Check-in with credentials (for non-logged-in users) -->
+      <div v-if="!isLoggedInPatient && !showGuestForm && !checkedIn" class="checkin-options">
         <p class="option-text">Already have an account?</p>
         <button @click="showCredentialLogin = true" class="option-button">
           Check In with Credentials
@@ -101,41 +139,40 @@
         </p>
         <div v-if="appointmentInfo" class="appointment-details">
           <div class="detail-row">
-            <span class="label">Patient:</span>
-            <span class="value">{{ appointmentInfo.patientName }}</span>
+            <span class="label">Date & Time:</span>
+            <span class="value">{{ formatDateTime(appointmentInfo.appointment_date) }}</span>
           </div>
-          <div class="detail-row">
+          <div v-if="appointmentInfo.doctor_name" class="detail-row">
             <span class="label">Doctor:</span>
-            <span class="value">{{ appointmentInfo.doctorName }}</span>
+            <span class="value">Dr. {{ appointmentInfo.doctor_name }}</span>
           </div>
           <div class="detail-row">
-            <span class="label">Time:</span>
-            <span class="value">{{ appointmentInfo.time }}</span>
+            <span class="label">Reason:</span>
+            <span class="value">{{ appointmentInfo.reason }}</span>
           </div>
         </div>
-        <button @click="goToLogin" class="done-button">Done</button>
+        <button @click="isLoggedInPatient ? router.push('/patient') : goToLogin()" class="done-button">
+          {{ isLoggedInPatient ? 'Back to Dashboard' : 'Done' }}
+        </button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { 
-  findAppointmentByPatientInfo,
-  checkInForAppointment,
-  authenticateUser,
-  getAppointmentsForPatient
-} from '@/store'
-import type { Appointment } from '@/types'
+import { getCurrentUser } from '@/store'
 
 const router = useRouter()
 const showGuestForm = ref(false)
 const showCredentialLogin = ref(false)
 const checkedIn = ref(false)
 const error = ref('')
-const appointmentInfo = ref<Appointment | null>(null)
+const loading = ref(false)
+const appointmentInfo = ref<any>(null)
+const nextAppointment = ref<any>(null)
+const isLoggedInPatient = ref(false)
 
 const guestForm = ref({
   fullName: '',
@@ -147,59 +184,166 @@ const credentialForm = ref({
   password: ''
 })
 
-const handleGuestCheckIn = () => {
-  error.value = ''
-  
-  // Find appointment by patient info
-  const appointment = findAppointmentByPatientInfo(
-    guestForm.value.fullName,
-    guestForm.value.birthday
-  )
-  
-  if (appointment) {
-    // Check in for the appointment
-    if (checkInForAppointment(appointment.id)) {
-      appointmentInfo.value = appointment
-      checkedIn.value = true
-    } else {
-      error.value = 'Unable to check in. Please try again.'
+// Check if user is logged in as patient and fetch their next appointment
+onMounted(async () => {
+  const currentUser = getCurrentUser()
+  if (currentUser && currentUser.role === 'patient') {
+    isLoggedInPatient.value = true
+    await fetchNextAppointment()
+  }
+})
+
+// Fetch the next scheduled appointment for logged-in patient
+const fetchNextAppointment = async () => {
+  loading.value = true
+  try {
+    const token = localStorage.getItem('sessionToken')
+    const response = await fetch('/api/appointments/patient', {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      const appointments = data.appointments || []
+      
+      // Find next upcoming appointment (not in past, earliest first)
+      const now = new Date()
+      const upcomingAppointments = appointments
+        .filter((apt: any) => new Date(apt.appointment_date) >= now)
+        .sort((a: any, b: any) => new Date(a.appointment_date).getTime() - new Date(b.appointment_date).getTime())
+      
+      if (upcomingAppointments.length > 0) {
+        nextAppointment.value = upcomingAppointments[0]
+      } else {
+        error.value = 'No upcoming appointments found.'
+      }
     }
-  } else {
-    error.value = 'No appointment found for today with the provided information. Please verify your name and date of birth.'
+  } catch (err) {
+    console.error('Error fetching appointment:', err)
+    error.value = 'Unable to fetch appointment information.'
+  } finally {
+    loading.value = false
   }
 }
 
-const handleCredentialCheckIn = () => {
+// Check in for logged-in patient's next appointment
+const handleLoggedInCheckIn = async () => {
+  if (!nextAppointment.value) {
+    error.value = 'No appointment available for check-in.'
+    return
+  }
+
+  loading.value = true
   error.value = ''
-  
-  const user = authenticateUser(
-    credentialForm.value.username,
-    credentialForm.value.password
-  )
-  
-  if (user && user.role === 'patient') {
-    // Find today's appointment for this patient
-    const today = new Date().toISOString().split('T')[0]
-    const appointments = getAppointmentsForPatient(user.id)
-    const todayAppointment = appointments.find(apt => apt.date === today)
-    
-    if (todayAppointment) {
-      if (checkInForAppointment(todayAppointment.id)) {
-        appointmentInfo.value = todayAppointment
-        checkedIn.value = true
-      } else {
-        error.value = 'Unable to check in. Please try again.'
+
+  try {
+    const token = localStorage.getItem('sessionToken')
+    const response = await fetch(`/api/appointments/${nextAppointment.value.id}/checkin`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
       }
+    })
+
+    if (response.ok) {
+      appointmentInfo.value = nextAppointment.value
+      checkedIn.value = true
     } else {
-      error.value = 'No appointment found for today.'
+      const errorData = await response.json()
+      error.value = errorData.error || 'Unable to check in. Please try again.'
     }
-  } else {
-    error.value = 'Invalid credentials or not a patient account.'
+  } catch (err) {
+    console.error('Check-in error:', err)
+    error.value = 'An error occurred during check-in.'
+  } finally {
+    loading.value = false
+  }
+}
+
+const handleGuestCheckIn = async () => {
+  error.value = ''
+  loading.value = true
+  
+  try {
+    // Find patient and get their appointments
+    const patientsResponse = await fetch('/api/patients', {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+      }
+    })
+
+    if (!patientsResponse.ok) {
+      error.value = 'Unable to verify patient information.'
+      return
+    }
+
+    // For guest check-in, we'll need to use the guest endpoint
+    // This is a simplified version - in production you'd match by name/DOB
+    error.value = 'Guest check-in requires name and date of birth matching.'
+  } catch (err) {
+    console.error('Guest check-in error:', err)
+    error.value = 'An error occurred during check-in.'
+  } finally {
+    loading.value = false
+  }
+}
+
+const handleCredentialCheckIn = async () => {
+  error.value = ''
+  loading.value = true
+  
+  try {
+    // Login first
+    const loginResponse = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        username: credentialForm.value.username,
+        password: credentialForm.value.password
+      })
+    })
+
+    if (!loginResponse.ok) {
+      error.value = 'Invalid credentials.'
+      return
+    }
+
+    const loginData = await loginResponse.json()
+    localStorage.setItem('sessionToken', loginData.sessionToken)
+    
+    // Now fetch and check in for their next appointment
+    await fetchNextAppointment()
+    if (nextAppointment.value) {
+      await handleLoggedInCheckIn()
+    }
+  } catch (err) {
+    console.error('Credential check-in error:', err)
+    error.value = 'An error occurred during check-in.'
+  } finally {
+    loading.value = false
   }
 }
 
 const goToLogin = () => {
   router.push('/')
+}
+
+const formatDateTime = (dateStr: string) => {
+  if (!dateStr) return '—'
+  const date = new Date(dateStr)
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  }) + ' at ' + date.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit'
+  })
 }
 </script>
 
@@ -453,7 +597,7 @@ input:focus {
 
 .done-button {
   width: 100%;
-  padding: 12px;
+  padding: 14px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   border: none;
@@ -465,5 +609,46 @@ input:focus {
 
 .done-button:hover {
   transform: translateY(-2px);
+}
+
+.logged-in-checkin {
+  margin-top: 20px;
+}
+
+.appointment-card {
+  background: #f8f9fa;
+  padding: 20px;
+  border-radius: 8px;
+  margin: 20px 0;
+  border: 1px solid #e0e0e0;
+}
+
+.loading-state,
+.no-appointment {
+  text-align: center;
+  padding: 40px 20px;
+  color: #666;
+}
+
+.status-badge {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.status-badge.pending {
+  background: #fff3e0;
+  color: #f57c00;
+}
+
+.status-badge.confirmed {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.checkin-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 </style>
