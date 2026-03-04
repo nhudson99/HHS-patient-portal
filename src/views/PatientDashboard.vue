@@ -162,9 +162,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 
-const router = useRouter()
 const activeTab = ref('appointments')
 const appointments = ref<any[]>([])
 const documents = ref<any[]>([])
@@ -229,25 +227,24 @@ const loadAppointments = async () => {
 
 // Load documents from API
 const loadDocuments = async () => {
-  if (!currentUser.value) return
+  if (!localStorage.getItem('sessionToken')) return
   
   documentsLoading.value = true
   try {
-    // First, need to get patient ID - use a helper endpoint or get from user profile
-    // For now, we'll need to fetch patient info from /api/patients/{id}
-    const patientsResponse = await fetch('/api/patients', {
+    // Get the current patient's own record
+    const patientResponse = await fetch('/api/patients/me', {
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
       }
     })
     
-    if (!patientsResponse.ok) {
+    if (!patientResponse.ok) {
       console.error('Failed to get patient info')
       return
     }
     
-    const patientsData = await patientsResponse.json()
-    const currentPatient = patientsData.patients?.[0]
+    const patientData = await patientResponse.json()
+    const currentPatient = patientData.patient
     
     if (!currentPatient) return
     
@@ -296,7 +293,7 @@ const loadDoctors = async () => {
 }
 
 const handleAppointmentRequest = async () => {
-  if (!currentUser.value || !appointmentForm.value.doctorId) {
+  if (!localStorage.getItem('sessionToken') || !appointmentForm.value.doctorId) {
     requestError.value = 'Please fill in all fields'
     return
   }

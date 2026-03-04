@@ -59,6 +59,36 @@ def list_doctors():
         return jsonify({'error': 'Failed to retrieve doctors'}), 500
 
 
+@patients_bp.route('/me', methods=['GET'])
+@authenticate
+def get_my_patient_record():
+    """Get the currently authenticated patient's own record"""
+    try:
+        user = request.user
+        if user.get('role') != 'patient':
+            return jsonify({'error': 'Insufficient permissions'}), 403
+
+        query = """
+            SELECT p.id, p.user_id, p.first_name, p.last_name, p.date_of_birth,
+                   p.phone, p.address, p.emergency_contact_name,
+                   p.emergency_contact_phone, p.created_at, p.updated_at,
+                   u.email AS portal_email
+            FROM patients p
+            LEFT JOIN users u ON p.user_id = u.id
+            WHERE p.user_id = %s
+        """
+        patient = execute_query(query, (user['id'],), fetch_one=True)
+
+        if not patient:
+            return jsonify({'error': 'Patient record not found'}), 404
+
+        return jsonify({'patient': serialize_patient(patient)}), 200
+
+    except Exception as e:
+        print(f"Patient self-lookup error: {e}")
+        return jsonify({'error': 'Failed to retrieve patient record'}), 500
+
+
 @patients_bp.route('', methods=['GET'])
 @authenticate
 def list_patients():
