@@ -63,8 +63,8 @@
         <form @submit.prevent="handleAppointmentRequest" class="appointment-form">
           <div class="form-group">
             <label for="doctor">Select Doctor</label>
-            <select id="doctor" v-model="appointmentForm.doctorId" required>
-              <option value="">Choose a doctor...</option>
+            <select id="doctor" v-model="appointmentForm.doctorId" required :disabled="doctorsLoading">
+              <option value="">{{ doctorsLoading ? 'Loading doctors...' : 'Choose a doctor...' }}</option>
               <option 
                 v-for="doctor in doctors" 
                 :key="doctor.id"
@@ -73,6 +73,9 @@
                 Dr. {{ doctor.name }}
               </option>
             </select>
+            <p v-if="!doctorsLoading && doctors.length === 0" class="error-message" style="margin-top: 8px; font-size: 0.85rem;">
+              Unable to load doctors. <a href="#" @click.prevent="loadDoctors" style="color: #2563eb;">Try again</a>
+            </p>
           </div>
 
           <div class="form-row">
@@ -161,7 +164,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 
 const activeTab = ref('appointments')
 const appointments = ref<any[]>([])
@@ -272,15 +275,26 @@ const loadDocuments = async () => {
 const loadDoctors = async () => {
   doctorsLoading.value = true
   try {
+    const token = localStorage.getItem('sessionToken')
+    if (!token) {
+      console.error('Load doctors: No session token found')
+      return
+    }
+    
     const response = await fetch('/api/patients/doctors', {
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+        'Authorization': `Bearer ${token}`
       }
     })
     
-    if (!response.ok) return
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      console.error('Load doctors failed:', response.status, errorData)
+      return
+    }
 
     const data = await response.json()
+    console.log('Doctors response:', data)
     doctors.value = (data.doctors || []).map((doctor: any) => ({
       id: doctor.id,
       name: `${doctor.first_name} ${doctor.last_name}`
@@ -429,6 +443,13 @@ const loadData = async () => {
 
 onMounted(() => {
   loadData()
+})
+
+// Retry loading doctors when switching to the request tab if they failed to load
+watch(activeTab, (newTab) => {
+  if (newTab === 'request' && doctors.value.length === 0 && !doctorsLoading.value) {
+    loadDoctors()
+  }
 })
 </script>
 

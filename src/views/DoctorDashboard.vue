@@ -63,6 +63,13 @@
               >
                 <div class="event-title">{{ event.title }}</div>
                 <div class="event-time">{{ event.start_time || 'All day' }}</div>
+                <button
+                  v-if="isAppointmentEvent(event) && getAppointmentStatus(event) === 'pending'"
+                  class="confirm-btn"
+                  @click.stop="confirmAppointment(event)"
+                >
+                  ✓ Confirm
+                </button>
               </div>
             </div>
           </div>
@@ -95,6 +102,14 @@
                 @contextmenu.stop="showEventContextMenu($event, event)"
               >
                 <div class="event-title">{{ event.title }}</div>
+                <div v-if="event.start_time" class="event-time">{{ formatEventTime(event.start_time) }}</div>
+                <button
+                  v-if="isAppointmentEvent(event) && getAppointmentStatus(event) === 'pending'"
+                  class="confirm-btn"
+                  @click.stop="confirmAppointment(event)"
+                >
+                  ✓ Confirm
+                </button>
               </div>
             </div>
           </div>
@@ -286,7 +301,7 @@ interface EventForm {
   is_all_day: boolean
 }
 
-const viewMode = ref<'day' | 'week' | 'month'>('month')
+const viewMode = ref<'day' | 'week' | 'month'>('week')
 const currentDate = ref(new Date())
 const events = ref<Event[]>([])
 const showEventModal = ref(false)
@@ -563,10 +578,62 @@ async function deleteEvent() {
   }
 }
 
+function isAppointmentEvent(event: Event): boolean {
+  return typeof event.id === 'string' && event.id.startsWith('apt-')
+}
+
+function getAppointmentStatus(event: Event): string {
+  // Title format is "Patient Name (status)"
+  const match = event.title.match(/\(([^)]+)\)$/)
+  return match ? match[1] : ''
+}
+
+function formatEventTime(timeStr: string): string {
+  if (!timeStr) return ''
+  const [h, m] = timeStr.split(':')
+  const hour = parseInt(h)
+  const ampm = hour >= 12 ? 'PM' : 'AM'
+  const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour
+  return `${displayHour}:${m} ${ampm}`
+}
+
+async function confirmAppointment(event: Event) {
+  if (!isAppointmentEvent(event)) return
+  const appointmentId = event.id.replace('apt-', '')
+
+  try {
+    const response = await fetch(`/api/appointments/${appointmentId}/confirm`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+      }
+    })
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}))
+      alert(data.error || 'Failed to confirm appointment')
+      return
+    }
+
+    // Reload events to reflect the status change
+    await loadEvents()
+  } catch (error) {
+    console.error('Error confirming appointment:', error)
+    alert('Failed to confirm appointment')
+  }
+}
+
 async function loadEvents() {
   try {
-    const start = formatDate(startOfMonth(currentDate.value), 'yyyy-MM-dd')
-    const end = formatDate(endOfMonth(currentDate.value), 'yyyy-MM-dd')
+    // Use a range that covers month view (which includes surrounding weeks)
+    const monthStart = startOfMonth(currentDate.value)
+    const monthEnd = endOfMonth(currentDate.value)
+    const weekStart = startOfWeek(currentDate.value)
+    const weekEnd = endOfWeek(currentDate.value)
+    
+    // Use the earlier of monthStart/weekStart and later of monthEnd/weekEnd
+    const start = formatDate(monthStart < weekStart ? monthStart : weekStart, 'yyyy-MM-dd')
+    const end = formatDate(monthEnd > weekEnd ? monthEnd : weekEnd, 'yyyy-MM-dd')
 
     const response = await fetch(`/api/events?start_date=${start}&end_date=${end}`, {
       headers: {
@@ -844,6 +911,29 @@ onMounted(() => {
 .event:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+.confirm-btn {
+  margin-top: 4px;
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #10b981;
+  border: 1px solid #10b981;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.confirm-btn:hover {
+  background: #10b981;
+  color: white;
+}
+
+.event-time {
+  font-size: 0.75rem;
+  opacity: 0.9;
 }
 
 .event-title {

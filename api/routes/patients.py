@@ -45,7 +45,7 @@ def list_doctors():
 
         query = """
             SELECT d.id, d.user_id, d.first_name, d.last_name, d.specialty,
-                   d.phone, d.office_address, d.created_at, d.updated_at,
+                   d.license_number, d.phone, d.created_at, d.updated_at,
                    u.email AS portal_email
             FROM doctors d
             LEFT JOIN users u ON d.user_id = u.id

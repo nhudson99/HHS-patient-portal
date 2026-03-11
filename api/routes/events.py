@@ -67,8 +67,56 @@ def get_events():
             fetch_all=True
         )
         
+        serialized_events = [serialize_event(e) for e in (events or [])]
+        
+        # Also fetch appointments for this doctor in the date range
+        appointments_query = """
+            SELECT a.id, a.doctor_id, a.patient_id, a.appointment_date, 
+                   a.appointment_time, a.status, a.reason, a.notes,
+                   a.created_at, a.updated_at,
+                   p.first_name || ' ' || p.last_name AS patient_name
+            FROM appointments a
+            LEFT JOIN patients p ON a.patient_id = p.id
+            WHERE a.doctor_id = %s
+            AND a.appointment_date BETWEEN %s AND %s
+            ORDER BY a.appointment_date, a.appointment_time
+        """
+        
+        appointments = execute_query(
+            appointments_query,
+            (doctor_id, start_date, end_date),
+            fetch_all=True
+        )
+        
+        # Map status to color
+        status_colors = {
+            'pending': '#f59e0b',
+            'confirmed': '#3b82f6',
+            'cancelled': '#ef4444',
+            'completed': '#10b981',
+        }
+        
+        # Convert appointments to event format for the calendar
+        for apt in (appointments or []):
+            apt_event = {
+                'id': f"apt-{apt['id']}",
+                'doctor_id': apt['doctor_id'],
+                'patient_id': apt['patient_id'],
+                'event_type': 'appointment',
+                'title': f"{apt.get('patient_name', 'Patient')} ({apt['status']})",
+                'description': apt.get('reason', ''),
+                'event_date': apt['appointment_date'].isoformat() if isinstance(apt['appointment_date'], (date, datetime)) else apt['appointment_date'],
+                'start_time': apt['appointment_time'].strftime('%H:%M:%S') if isinstance(apt['appointment_time'], time) else apt.get('appointment_time'),
+                'end_time': None,
+                'color': status_colors.get(apt['status'], '#3b82f6'),
+                'is_all_day': False,
+                'created_at': apt['created_at'].isoformat() if isinstance(apt['created_at'], datetime) else apt.get('created_at'),
+                'updated_at': apt['updated_at'].isoformat() if isinstance(apt['updated_at'], datetime) else apt.get('updated_at'),
+            }
+            serialized_events.append(apt_event)
+        
         return jsonify({
-            'events': [serialize_event(e) for e in (events or [])]
+            'events': serialized_events
         }), 200
         
     except Exception as e:

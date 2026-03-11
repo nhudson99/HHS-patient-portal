@@ -4,7 +4,7 @@ Handles appointment requests, confirmations, and check-ins
 """
 
 from flask import Blueprint, request, jsonify
-from datetime import datetime, date
+from datetime import datetime, date, time
 from api.db.connection import execute_query
 from api.middleware.auth import authenticate
 
@@ -21,6 +21,8 @@ def serialize_appointment(apt):
             result[key] = value.isoformat()
         elif isinstance(value, date):
             result[key] = value.isoformat()
+        elif isinstance(value, time):
+            result[key] = value.strftime('%H:%M:%S')
     return result
 
 
@@ -106,21 +108,22 @@ def request_appointment():
             return jsonify({'error': 'Doctor not found'}), 404
         
         # Combine date and time into appointment_date
-        appointment_date = f"{data['appointment_date']} {data['appointment_time']}"
+        appointment_date = data['appointment_date']
+        appointment_time = data['appointment_time']
         reason = data['reason']
         
         # Insert appointment with status 'pending'
         insert_query = """
             INSERT INTO appointments
-            (patient_id, doctor_id, appointment_date, reason, status)
-            VALUES (%s, %s, %s, %s, 'pending')
-            RETURNING id, patient_id, doctor_id, appointment_date, reason, status,
+            (patient_id, doctor_id, appointment_date, appointment_time, reason, status)
+            VALUES (%s, %s, %s, %s, %s, 'pending')
+            RETURNING id, patient_id, doctor_id, appointment_date, appointment_time, reason, status,
                       created_at, updated_at
         """
         
         appointment = execute_query(
             insert_query,
-            (patient_id, doctor_id, appointment_date, reason),
+            (patient_id, doctor_id, appointment_date, appointment_time, reason),
             fetch_one=True
         )
         
@@ -132,6 +135,59 @@ def request_appointment():
     except Exception as e:
         print(f"Appointment request error: {e}")
         return jsonify({'error': 'Failed to request appointment'}), 500
+
+
+@appointments_bp.route('/<appointment_id>/confirm', methods=['PATCH'])
+@authenticate
+def confirm_appointment(appointment_id):
+    """
+    PATCH /api/appointments/<appointment_id>/confirm
+    Doctor confirms a pending appointment
+    """
+    try:
+        user = request.user
+
+        if user.get('role') != 'doctor':
+            return jsonify({'error': 'Only doctors can confirm appointments'}), 403
+
+        # Get doctor ID
+        doctor_query = "SELECT id FROM doctors WHERE user_id = %s"
+        doctor = execute_query(doctor_query, (user['id'],), fetch_one=True)
+
+        if not doctor:
+            return jsonify({'error': 'Doctor record not found'}), 404
+
+        # Verify appointment belongs to this doctor and is pending
+        apt_query = """
+            SELECT id, status FROM appointments
+            WHERE id = %s AND doctor_id = %s
+        """
+        appointment = execute_query(apt_query, (appointment_id, doctor['id']), fetch_one=True)
+
+        if not appointment:
+            return jsonify({'error': 'Appointment not found'}), 404
+
+        if appointment['status'] != 'pending':
+            return jsonify({'error': f"Cannot confirm appointment with status '{appointment['status']}'"}), 400
+
+        # Update status to confirmed
+        update_query = """
+            UPDATE appointments
+            SET status = 'confirmed', updated_at = NOW()
+            WHERE id = %s
+            RETURNING id, patient_id, doctor_id, appointment_date, appointment_time,
+                      status, reason, notes, created_at, updated_at
+        """
+        updated = execute_query(update_query, (appointment_id,), fetch_one=True)
+
+        return jsonify({
+            'message': 'Appointment confirmed',
+            'appointment': serialize_appointment(updated)
+        }), 200
+
+    except Exception as e:
+        print(f"Appointment confirm error: {e}")
+        return jsonify({'error': 'Failed to confirm appointment'}), 500
 
 
 @appointments_bp.route('/<appointment_id>/checkin', methods=['POST'])
