@@ -27,6 +27,7 @@
   },
   "homepage": "https://github.com/nhudson99/HHS-patient-portal#readme",
   "dependencies": {
+    "@azure/msal-browser": "^5.5.0",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",

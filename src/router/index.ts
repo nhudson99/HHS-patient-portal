@@ -36,6 +36,13 @@ const routes: RouteRecordRaw[] = [
     name: 'PatientDashboard',
     component: () => import('@/views/PatientDashboard.vue'),
     meta: { requiresAuth: true, role: 'patient' }
+  },
+  {
+    // Admin portal — access via Microsoft SSO (@hudsonitconsulting.com only).
+    // Auth is handled entirely inside AdminView; no portal session required to reach this route.
+    path: '/admin',
+    name: 'Admin',
+    component: () => import('@/views/AdminView.vue')
   }
 ]
 
@@ -64,6 +71,9 @@ router.beforeEach(async (to, _from, next) => {
   } else if (to.path === '/' && user) {
     // Redirect logged in users to their dashboard
     next(user.role === 'doctor' ? '/doctor' : '/patient')
+  } else if (to.path === '/admin') {
+    // /admin handles its own auth via Microsoft SSO — always allow
+    next()
   } else {
     next()
   }
