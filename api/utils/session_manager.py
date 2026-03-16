@@ -51,7 +51,6 @@ def validate_session(session_token):
     query = """
         SELECT * FROM user_sessions 
         WHERE session_token = %s 
-        AND is_active = true 
         AND expires_at > NOW()
     """
     
@@ -91,8 +90,7 @@ def invalidate_session(session_token):
         session_token: Session token to invalidate
     """
     query = """
-        UPDATE user_sessions 
-        SET is_active = false 
+        DELETE FROM user_sessions 
         WHERE session_token = %s
     """
     
@@ -106,8 +104,7 @@ def invalidate_all_user_sessions(user_id):
         user_id: User UUID
     """
     query = """
-        UPDATE user_sessions 
-        SET is_active = false 
+        DELETE FROM user_sessions 
         WHERE user_id = %s
     """
     
@@ -117,8 +114,7 @@ def cleanup_expired_sessions():
     """Clean up expired sessions"""
     query = """
         DELETE FROM user_sessions 
-        WHERE expires_at < NOW() 
-        OR (is_active = false AND created_at < NOW() - INTERVAL '7 days')
+        WHERE expires_at < NOW()
     """
     
     result = execute_query(query)
@@ -137,7 +133,6 @@ def get_user_sessions(user_id):
     query = """
         SELECT * FROM user_sessions 
         WHERE user_id = %s 
-        AND is_active = true 
         AND expires_at > NOW()
         ORDER BY last_activity DESC
     """

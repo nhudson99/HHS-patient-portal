@@ -1,106 +1,134 @@
 #!/bin/bash
 
 # HHS Patient Portal Docker Build Script
-# This script builds and runs the complete application stack
+# Uses Docker Compose v2 (plugin) for modern, reliable container management
 
 set -e
 
-echo "🏥 Building HHS Patient Portal Docker Image..."
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
 
-# Check if Docker is installed
+echo -e "${BLUE}🏥 HHS Patient Portal - Docker Setup${NC}"
+
+# Check Docker and Docker Compose v2 installation
 if ! command -v docker &> /dev/null; then
-    echo "❌ Docker is not installed."
-    echo ""
-    echo "💡 For WSL 2 integration with Docker Desktop:"
-    echo "   1. Open Docker Desktop on Windows"
-    echo "   2. Go to Settings → Resources → WSL Integration"
-    echo "   3. Enable integration for your distro"
-    echo "   4. Click Apply & Restart"
-    echo ""
-    echo "💡 Or install Docker natively in WSL:"
-    echo "   sudo apt-get update && sudo apt-get install docker.io docker-compose"
-    echo "   sudo usermod -aG docker \$USER"
-    echo "   Log out and back in, then try again"
+    echo -e "${RED}❌ Docker not found${NC}"
+    echo "Install from: https://docs.docker.com/get-docker/"
     exit 1
 fi
 
-# Check if Docker Compose is installed
-if ! command -v docker-compose &> /dev/null; then
-    echo "❌ Docker Compose is not installed."
-    echo "💡 Install with: sudo apt-get install docker-compose"
+if ! docker compose version &> /dev/null; then
+    echo -e "${RED}❌ Docker Compose v2 plugin not found${NC}"
+    echo "Install with: apt install docker-compose-plugin (Linux) or brew install docker-compose (macOS)"
     exit 1
 fi
 
-# Create .env file if it doesn't exist
+# Create .env if missing
 if [ ! -f .env ]; then
-    echo "📝 Creating .env file from .env.example..."
-    cp .env.example .env
-    echo "⚠️  Please update .env with your configuration"
+    echo -e "${BLUE}📝 Creating .env...${NC}"
+    cp .env.example .env || { echo -e "${RED}❌ .env.example not found${NC}"; exit 1; }
 fi
 
-# Determine if we need to use sudo
-DOCKER_CMD="docker"
-if ! docker ps &> /dev/null; then
-    echo "💡 Using sudo for Docker commands..."
-    DOCKER_CMD="sudo docker"
+# Test Docker access
+SUDO_CMD=""
+if ! docker ps &> /dev/null 2>&1; then
+    SUDO_CMD="sudo"
 fi
 
-# Clean up any existing containers and volumes
-echo "🧹 Cleaning up existing containers..."
-if [[ $DOCKER_CMD == *"sudo"* ]]; then
-    sudo docker-compose down -v 2>/dev/null || true
-else
-    docker-compose down -v 2>/dev/null || true
+# Helper functions
+build() {
+    echo -e "${BLUE}🔨 Building Docker image...${NC}"
+    $SUDO_CMD docker compose build --pull
+    echo -e "${GREEN}✅ Build complete${NC}"
+}
+
+start() {
+    echo -e "${BLUE}🚀 Starting services...${NC}"
+    $SUDO_CMD docker compose up -d
+    sleep 2
+    echo -e "${BLUE}✅ Services started - checking health...${NC}"
+    $SUDO_CMD docker compose ps
+}
+
+stop() {
+    echo -e "${BLUE}⏹️  Stopping...${NC}"
+    $SUDO_CMD docker compose down
+    echo -e "${GREEN}✅ Stopped${NC}"
+}
+
+logs() {
+    $SUDO_CMD docker compose logs -f "${1:-.}"
+}
+
+status() {
+    echo -e "${BLUE}📊 Service status:${NC}"
+    $SUDO_CMD docker compose ps
+}
+
+clean() {
+    echo -e "${YELLOW}🧹 Removing volumes...${NC}"
+    $SUDO_CMD docker compose down -v
+    echo -e "${GREEN}✅ Cleaned${NC}"
+}
+
+reset() {
+    echo -e "${YELLOW}⚠️  Hard reset - remove all containers/volumes/images${NC}"
+    read -p "Continue? (yes/no): " -r
+    if [[ $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
+        $SUDO_CMD docker compose down -v --remove-orphans
+        $SUDO_CMD docker rmi hhs-patient-portal:latest 2>/dev/null || true
+        echo -e "${GREEN}✅ Reset${NC}"
+    fi
+}
+
+show_help() {
+    echo "Commands:"
+    echo "  build              Build images"
+    echo "  start              Start services"
+    echo "  stop               Stop services"
+    echo "  restart            Restart services"
+    echo "  logs [svc]         View logs"
+    echo "  status             Service status"
+    echo "  clean              Remove volumes"
+    echo "  reset              Hard reset"
+    echo "  help               Show this"
+}
+
+# Main
+case "${1:-build}" in
+    build) build ;;
+    start) start ;;
+    stop) stop ;;
+    restart) stop; sleep 1; start ;;
+    logs) logs "$2" ;;
+    status) status ;;
+    clean) clean ;;
+    reset) reset ;;
+    help|--help|-h) show_help ;;
+    "") build; echo ""; start ;;
+    *)
+        echo -e "${RED}Unknown: $1${NC}"
+        show_help
+        exit 1
+        ;;
+esac
+
+# Summary
+if [[ "${1:-}" == "start" ]] || [[ "${1:-}" == "build" ]] || [[ "${1:-}" == "" ]]; then
+    echo ""
+    echo -e "${GREEN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║  🏥 HHS Patient Portal - Setup Complete  ║${NC}"
+    echo -e "${GREEN}╠════════════════════════════════════════════╣${NC}"
+    echo -e "${GREEN}║  API:        http://localhost:3000        ║${NC}"
+    echo -e "${GREEN}║  Web:        http://localhost:80          ║${NC}"
+    echo -e "${GREEN}║  DB:         localhost:5432              ║${NC}"
+    echo -e "${GREEN}║  Redis:      localhost:6379              ║${NC}"
+    echo -e "${GREEN}║                                            ║${NC}"
+    echo -e "${GREEN}║  Patient:    patient1 / Patient123!       ║${NC}"
+    echo -e "${GREEN}║  Doctor:     doctor1 / Doctor123!         ║${NC}"
+    echo -e "${GREEN}╚════════════════════════════════════════════╝${NC}"
 fi
-
-
-# Prune old images before building
-echo "🧹 Pruning old Docker images..."
-$DOCKER_CMD image prune -af
-
-# Build the Docker image with no cache
-echo "🔨 Building Docker image (no cache)..."
-$DOCKER_CMD build --no-cache -t hhs-patient-portal:latest .
-
-# Start the services
-echo "🚀 Starting services with Docker Compose..."
-if [[ $DOCKER_CMD == *"sudo"* ]]; then
-    sudo docker-compose up -d
-else
-    docker-compose up -d
-fi
-
-# Wait for services to stabilize
-echo "⏳ Waiting for services to stabilize..."
-sleep 5
-
-# Check if services are healthy
-echo "✅ Checking service health..."
-if [[ $DOCKER_CMD == *"sudo"* ]]; then
-    sudo docker-compose ps
-else
-    docker-compose ps
-fi
-
-echo ""
-echo "╔════════════════════════════════════════════════════════╗"
-echo "║       🏥 HHS Patient Portal - Docker Setup Complete    ║"
-echo "╠════════════════════════════════════════════════════════╣"
-echo "║                                                        ║"
-echo "║  API:             http://localhost:3000               ║"
-echo "║  Web Portal:      http://localhost:80                 ║"
-echo "║  Database:        localhost:5432                      ║"
-echo "║  Redis:           localhost:6379                      ║"
-echo "║                                                        ║"
-echo "║  Test Credentials:                                    ║"
-echo "║  Patient:         patient1 / Patient123!              ║"
-echo "║  Doctor:          doctor1 / Doctor123!                ║"
-echo "║                                                        ║"
-echo "║  Docker Commands:                                     ║"
-echo "║  - View logs:      docker-compose logs -f             ║"
-echo "║  - Stop:           docker-compose down                ║"
-echo "║  - Restart:        docker-compose restart             ║"
-echo "║  - Shell into API: docker exec -it hhs-api bash       ║"
-echo "║                                                        ║"
-echo "╚════════════════════════════════════════════════════════╝"
-echo ""

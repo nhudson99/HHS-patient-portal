@@ -41,8 +41,10 @@ app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20MB max upload size
 
 # Security middleware - HIPAA compliance
 if os.getenv('NODE_ENV') == 'production':
-    # Force HTTPS in production
-    Talisman(app, force_https=True, strict_transport_security_max_age=31536000)
+    # In production, allow HTTPS enforcement to be controlled by env.
+    # This avoids redirect loops when TLS is terminated upstream (e.g., nginx/load balancer).
+    force_https = os.getenv('FORCE_HTTPS', 'false').lower() in ('1', 'true', 'yes')
+    Talisman(app, force_https=force_https, strict_transport_security_max_age=31536000)
 
 # CORS configuration
 allowed_origins = os.getenv('ALLOWED_ORIGINS', 'http://localhost:5173').split(',')

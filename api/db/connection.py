@@ -25,6 +25,10 @@ def init_db_pool():
     global connection_pool
     
     try:
+        sslmode = os.getenv('DB_SSLMODE')
+        if not sslmode:
+            sslmode = 'require' if os.getenv('NODE_ENV') == 'production' else 'prefer'
+
         connection_pool = psycopg2.pool.ThreadedConnectionPool(
             minconn=1,
             maxconn=20,
@@ -33,8 +37,7 @@ def init_db_pool():
             database=os.getenv('DB_NAME', 'hhs_patient_portal'),
             user=os.getenv('DB_USER', 'postgres'),
             password=os.getenv('DB_PASSWORD'),
-            # SSL for production (required for HIPAA compliance)
-            sslmode='require' if os.getenv('NODE_ENV') == 'production' else 'prefer'
+            sslmode=sslmode
         )
         logger.info("✅ Connected to PostgreSQL database")
         return connection_pool
