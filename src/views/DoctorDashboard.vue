@@ -251,6 +251,7 @@
         </div>
       </div>
     </div>
+
   </div>
 </template>
 
@@ -669,12 +670,13 @@ onMounted(() => {
 
 .dashboard-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
   margin-bottom: 2rem;
   background: white;
   padding: 1.5rem 2rem;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  gap: 1rem;
 }
 
 .controls {
@@ -1077,6 +1079,7 @@ onMounted(() => {
   padding-top: 1.5rem;
   border-top: 1px solid #ddd;
 }
+
 
 .btn-primary,
 .btn-secondary,

@@ -33,6 +33,7 @@ from api.routes.patients import patients_bp
 from api.routes.patient_properties import patient_properties_bp
 from api.routes.documents import documents_bp
 from api.routes.appointments import appointments_bp
+from api.routes.feature_requests import feature_requests_bp
 
 # Create Flask app
 app = Flask(__name__)
@@ -87,6 +88,7 @@ app.register_blueprint(patients_bp)
 app.register_blueprint(patient_properties_bp)
 app.register_blueprint(documents_bp)
 app.register_blueprint(appointments_bp)
+app.register_blueprint(feature_requests_bp)
 
 # Error handlers
 @app.errorhandler(404)
