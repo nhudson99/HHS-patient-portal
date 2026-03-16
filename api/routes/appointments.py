@@ -26,6 +26,65 @@ def serialize_appointment(apt):
     return result
 
 
+@appointments_bp.route('/kiosk/lookup', methods=['POST'])
+def kiosk_lookup():
+    """
+    POST /api/appointments/kiosk/lookup
+    No auth required — finds a patient's next upcoming appointment by name + DOB.
+    Used by the front-desk tablet kiosk.
+    """
+    try:
+        data = request.get_json()
+        if not data or not data.get('patient_name') or not data.get('date_of_birth'):
+            return jsonify({'error': 'Full name and date of birth are required'}), 400
+
+        patient_name = data['patient_name'].strip()
+        dob = data['date_of_birth']
+
+        # Match patient by full name + DOB (case-insensitive)
+        patient_query = """
+            SELECT p.id,
+                   u.username,
+                   CONCAT(p.first_name, ' ', p.last_name) AS full_name
+            FROM patients p
+            JOIN users u ON u.id = p.user_id
+            WHERE LOWER(CONCAT(p.first_name, ' ', p.last_name)) = LOWER(%s)
+              AND p.date_of_birth = %s
+        """
+        patient = execute_query(patient_query, (patient_name, dob), fetch_one=True)
+
+        if not patient:
+            return jsonify({'error': 'No patient found with that name and date of birth'}), 404
+
+        # Find their next upcoming appointment
+        apt_query = """
+            SELECT a.id,
+                   a.appointment_date,
+                   a.appointment_time,
+                   a.reason,
+                   a.status,
+                   CONCAT(d_p.first_name, ' ', d_p.last_name) AS doctor_name
+            FROM appointments a
+            LEFT JOIN doctors doc ON doc.id = a.doctor_id
+            LEFT JOIN patients d_p ON d_p.user_id = doc.user_id
+            WHERE a.patient_id = %s
+              AND a.appointment_date >= CURRENT_DATE
+              AND a.status NOT IN ('cancelled', 'completed')
+            ORDER BY a.appointment_date ASC, a.appointment_time ASC
+            LIMIT 1
+        """
+        appointment = execute_query(apt_query, (patient['id'],), fetch_one=True)
+
+        if not appointment:
+            return jsonify({'error': 'No upcoming appointments found'}), 404
+
+        return jsonify({'appointment': serialize_appointment(appointment)}), 200
+
+    except Exception as e:
+        print(f'Kiosk lookup error: {e}')
+        return jsonify({'error': 'Lookup failed'}), 500
+
+
 @appointments_bp.route('/patient', methods=['GET'])
 @authenticate
 def get_patient_appointments():
