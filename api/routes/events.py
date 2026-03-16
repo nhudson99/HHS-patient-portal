@@ -72,14 +72,14 @@ def get_events():
         # Also fetch appointments for this doctor in the date range
         appointments_query = """
             SELECT a.id, a.doctor_id, a.patient_id, a.appointment_date, 
-                   a.appointment_time, a.status, a.reason, a.notes,
+                   a.status, a.reason, a.notes,
                    a.created_at, a.updated_at,
                    p.first_name || ' ' || p.last_name AS patient_name
             FROM appointments a
             LEFT JOIN patients p ON a.patient_id = p.id
             WHERE a.doctor_id = %s
             AND a.appointment_date BETWEEN %s AND %s
-            ORDER BY a.appointment_date, a.appointment_time
+            ORDER BY a.appointment_date
         """
         
         appointments = execute_query(
@@ -98,6 +98,11 @@ def get_events():
         
         # Convert appointments to event format for the calendar
         for apt in (appointments or []):
+            appointment_date = apt.get('appointment_date')
+            start_time = None
+            if isinstance(appointment_date, datetime):
+                start_time = appointment_date.strftime('%H:%M:%S')
+
             apt_event = {
                 'id': f"apt-{apt['id']}",
                 'doctor_id': apt['doctor_id'],
@@ -106,7 +111,7 @@ def get_events():
                 'title': f"{apt.get('patient_name', 'Patient')} ({apt['status']})",
                 'description': apt.get('reason', ''),
                 'event_date': apt['appointment_date'].isoformat() if isinstance(apt['appointment_date'], (date, datetime)) else apt['appointment_date'],
-                'start_time': apt['appointment_time'].strftime('%H:%M:%S') if isinstance(apt['appointment_time'], time) else apt.get('appointment_time'),
+                'start_time': start_time,
                 'end_time': None,
                 'color': status_colors.get(apt['status'], '#3b82f6'),
                 'is_all_day': False,

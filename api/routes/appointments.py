@@ -60,7 +60,6 @@ def kiosk_lookup():
         apt_query = """
             SELECT a.id,
                    a.appointment_date,
-                   a.appointment_time,
                    a.reason,
                    a.status,
                    CONCAT(d_p.first_name, ' ', d_p.last_name) AS doctor_name
@@ -70,7 +69,7 @@ def kiosk_lookup():
             WHERE a.patient_id = %s
               AND a.appointment_date >= CURRENT_DATE
               AND a.status NOT IN ('cancelled', 'completed')
-            ORDER BY a.appointment_date ASC, a.appointment_time ASC
+            ORDER BY a.appointment_date ASC
             LIMIT 1
         """
         appointment = execute_query(apt_query, (patient['id'],), fetch_one=True)
@@ -174,9 +173,9 @@ def request_appointment():
         # Insert appointment with status 'pending'
         insert_query = """
             INSERT INTO appointments
-            (patient_id, doctor_id, appointment_date, appointment_time, reason, status)
-            VALUES (%s, %s, %s, %s, %s, 'pending')
-            RETURNING id, patient_id, doctor_id, appointment_date, appointment_time, reason, status,
+            (patient_id, doctor_id, appointment_date, reason, status)
+            VALUES (%s, %s, (%s::date + %s::time), %s, 'pending')
+            RETURNING id, patient_id, doctor_id, appointment_date, reason, status,
                       created_at, updated_at
         """
         
@@ -234,7 +233,7 @@ def confirm_appointment(appointment_id):
             UPDATE appointments
             SET status = 'confirmed', updated_at = NOW()
             WHERE id = %s
-            RETURNING id, patient_id, doctor_id, appointment_date, appointment_time,
+            RETURNING id, patient_id, doctor_id, appointment_date,
                       status, reason, notes, created_at, updated_at
         """
         updated = execute_query(update_query, (appointment_id,), fetch_one=True)

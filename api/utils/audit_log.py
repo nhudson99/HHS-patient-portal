@@ -30,15 +30,15 @@ def log_audit_event(user_id=None, action=None, table_name=None, record_id=None,
     try:
         query = """
             INSERT INTO audit_logs 
-            (user_id, action, table_name, record_id, ip_address, user_agent, details)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            (user_id, action, resource_type, resource_id, ip_address, user_agent, old_values, new_values, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s)
         """
         
         details_json = json.dumps(details) if details else None
         
         execute_query(
             query,
-            (user_id, action, table_name, record_id, ip_address, user_agent, details_json)
+            (user_id, action, table_name, record_id, ip_address, user_agent, None, details_json, 'SUCCESS')
         )
     except Exception as e:
         logger.error(f"Failed to log audit event: {e}")
@@ -167,7 +167,7 @@ def cleanup_old_audit_logs():
     try:
         query = """
             DELETE FROM audit_logs 
-            WHERE timestamp < NOW() - INTERVAL '%s days'
+            WHERE created_at < (NOW() - (%s * INTERVAL '1 day'))
         """
         
         result = execute_query(query, (retention_days,))
