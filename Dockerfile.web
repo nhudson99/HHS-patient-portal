@@ -1,0 +1,15 @@
+FROM nginx:1.27-alpine
+
+RUN apk add --no-cache bash gettext
+
+WORKDIR /app
+
+COPY dist /usr/share/nginx/html
+COPY docker/nginx.azure.conf.template /etc/nginx/templates/default.conf.template
+COPY docker/start-nginx-azure.sh /start-nginx-azure.sh
+
+RUN chmod +x /start-nginx-azure.sh
+
+EXPOSE 80
+
+CMD ["/start-nginx-azure.sh"]
