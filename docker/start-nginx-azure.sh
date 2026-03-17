@@ -1,7 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${API_UPSTREAM:?API_UPSTREAM env var is required, e.g. https://hhs-api.<hash>.azurecontainerapps.io}"
+# Default to localhost if not provided (local dev) or use external upstream if provided
+API_UPSTREAM="${API_UPSTREAM:-http://127.0.0.1:3000}"
+GUNICORN_WORKERS="${GUNICORN_WORKERS:-1}"
+GUNICORN_TIMEOUT="${GUNICORN_TIMEOUT:-180}"
+GUNICORN_THREADS="${GUNICORN_THREADS:-2}"
 
-envsubst '${API_UPSTREAM}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf
-exec nginx -g 'daemon off;'
+# Create nginx config from template
+envsubst '${API_UPSTREAM}' < /etc/nginx/templates/default.conf.template > /etc/nginx/sites-enabled/default
+
+# Start gunicorn in background
+gunicorn \
+  --bind 0.0.0.0:3000 \
+  --workers "$GUNICORN_WORKERS" \
+  --threads "$GUNICORN_THREADS" \
+  --worker-class sync \
+  --timeout "$GUNICORN_TIMEOUT" \
+  --access-logfile - \
+  --error-logfile - \
+  api.app:app &
+
+# Give gunicorn time to start
+sleep 2
+
+# Run nginx in foreground
+nginx -g 'daemon off;'

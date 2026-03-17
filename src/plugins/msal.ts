@@ -9,9 +9,33 @@
 
 import { PublicClientApplication, type Configuration } from '@azure/msal-browser'
 
-const clientId = import.meta.env.VITE_AZURE_CLIENT_ID as string
-const tenantId = import.meta.env.VITE_AZURE_TENANT_ID as string
-const redirectUri = (import.meta.env.VITE_AZURE_REDIRECT_URI as string) || `${window.location.origin}/admin`
+const clientId = (import.meta.env.VITE_AZURE_CLIENT_ID as string | undefined)?.trim() || ''
+const tenantId = (import.meta.env.VITE_AZURE_TENANT_ID as string | undefined)?.trim() || ''
+const configuredRedirectUri = (import.meta.env.VITE_AZURE_REDIRECT_URI as string | undefined)?.trim()
+
+const resolveRedirectUri = (): string => {
+  const runtimeAdminUrl = `${window.location.origin}/admin`
+
+  if (!configuredRedirectUri) {
+    return runtimeAdminUrl
+  }
+
+  try {
+    const parsedUrl = new URL(configuredRedirectUri)
+    const configuredIsLocalhost = ['localhost', '127.0.0.1'].includes(parsedUrl.hostname)
+    const runtimeIsLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+
+    if (configuredIsLocalhost && !runtimeIsLocalhost) {
+      return runtimeAdminUrl
+    }
+
+    return parsedUrl.toString()
+  } catch {
+    return runtimeAdminUrl
+  }
+}
+
+const redirectUri = resolveRedirectUri()
 
 if (!clientId || !tenantId) {
   console.warn(
@@ -22,8 +46,8 @@ if (!clientId || !tenantId) {
 
 const msalConfig: Configuration = {
   auth: {
-    clientId: clientId ?? 'MISSING_CLIENT_ID',
-    authority: `https://login.microsoftonline.com/${tenantId ?? 'common'}`,
+    clientId: clientId || 'MISSING_CLIENT_ID',
+    authority: `https://login.microsoftonline.com/${tenantId || 'common'}`,
     redirectUri
   },
   cache: {

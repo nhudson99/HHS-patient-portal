@@ -5,6 +5,14 @@ FROM node:21-alpine AS frontend-builder
 
 WORKDIR /app
 
+ARG VITE_AZURE_CLIENT_ID
+ARG VITE_AZURE_TENANT_ID
+ARG VITE_AZURE_REDIRECT_URI
+
+ENV VITE_AZURE_CLIENT_ID=${VITE_AZURE_CLIENT_ID}
+ENV VITE_AZURE_TENANT_ID=${VITE_AZURE_TENANT_ID}
+ENV VITE_AZURE_REDIRECT_URI=${VITE_AZURE_REDIRECT_URI}
+
 COPY package*.json ./
 RUN npm ci --prefer-offline --no-audit
 
@@ -16,15 +24,20 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies including nginx
 RUN apt-get update \
      && apt-get install -y --no-install-recommends \
          postgresql-client \
          libpq-dev \
          curl \
          wget \
+         nginx \
+         bash \
+         gettext-base \
      && apt-get clean \
      && rm -rf /var/lib/apt/lists/*
+
+RUN rm -f /etc/nginx/sites-enabled/default
 
 # Copy Python requirements
 COPY requirements.txt .
@@ -38,21 +51,34 @@ COPY server/ ./server/
 # Copy built frontend from stage 1
 COPY --from=frontend-builder /app/dist ./dist
 
-# Create non-root user for security
+# Copy nginx config
+COPY docker/nginx.azure.conf.template /etc/nginx/templates/default.conf.template
+COPY docker/start-nginx-azure.sh /start-nginx-azure.sh
+
+# Set up nginx to serve static files and proxy API
+RUN mkdir -p /usr/share/nginx/html && \
+    cp -r ./dist/* /usr/share/nginx/html/
+
+# Create non-root user for security (for gunicorn)
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
-USER appuser
+
+# nginx runs as root, gunicorn runs as appuser
+
 
 # Expose ports
-EXPOSE 3000 5173
+EXPOSE 80 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:3000/health || exit 1
+    CMD curl -f http://localhost/ || exit 1
 
 # Default environment
 ENV FLASK_ENV=production
 ENV PYTHONUNBUFFERED=1
 ENV PATH="/home/appuser/.local/bin:${PATH}"
+ENV API_UPSTREAM="http://127.0.0.1:3000"
 
-# Run API server with gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:3000", "--workers", "4", "--worker-class", "sync", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "api.app:app"]
+# Start both nginx and gunicorn
+RUN chmod +x /start-nginx-azure.sh
+CMD ["/start-nginx-azure.sh"]
+
