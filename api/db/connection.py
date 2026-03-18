@@ -29,17 +29,22 @@ def init_db_pool():
         if not sslmode:
             sslmode = 'require' if os.getenv('NODE_ENV') == 'production' else 'prefer'
 
+        min_connections = int(os.getenv('DB_POOL_MIN_CONN', 1))
+        max_connections = int(os.getenv('DB_POOL_MAX_CONN', 10))
+
         connection_pool = psycopg2.pool.ThreadedConnectionPool(
-            minconn=1,
-            maxconn=20,
+            minconn=min_connections,
+            maxconn=max_connections,
             host=os.getenv('DB_HOST', 'localhost'),
             port=int(os.getenv('DB_PORT', 5432)),
             database=os.getenv('DB_NAME', 'hhs_patient_portal'),
             user=os.getenv('DB_USER', 'postgres'),
             password=os.getenv('DB_PASSWORD'),
-            sslmode=sslmode
+            sslmode=sslmode,
+            connect_timeout=int(os.getenv('DB_CONNECT_TIMEOUT', 10)),
+            application_name=os.getenv('DB_APPLICATION_NAME', 'hhs-patient-portal-api')
         )
-        logger.info("✅ Connected to PostgreSQL database")
+        logger.info("✅ Connected to PostgreSQL database (pool min=%s max=%s)", min_connections, max_connections)
         return connection_pool
     except Exception as e:
         logger.error(f"❌ Failed to create connection pool: {e}")
@@ -70,6 +75,7 @@ def execute_query(query, params=None, fetch_one=False, fetch_all=False):
         Query results or None
     """
     conn = None
+    cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -78,15 +84,12 @@ def execute_query(query, params=None, fetch_one=False, fetch_all=False):
         
         if fetch_one:
             result = cursor.fetchone()
-            conn.commit()  # Commit after fetch for INSERT...RETURNING
         elif fetch_all:
             result = cursor.fetchall()
-            conn.commit()  # Commit after fetch
         else:
             conn.commit()
             result = cursor.rowcount
-            
-        cursor.close()
+
         return result
         
     except Exception as e:
@@ -95,6 +98,8 @@ def execute_query(query, params=None, fetch_one=False, fetch_all=False):
         logger.error(f"Database query error: {e}")
         raise
     finally:
+        if cursor:
+            cursor.close()
         if conn:
             release_db_connection(conn)
 

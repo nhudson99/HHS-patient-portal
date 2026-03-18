@@ -11,6 +11,9 @@ import os
 from datetime import datetime, timedelta
 from api.db.connection import execute_query
 from api.utils.security import generate_session_token
+import logging
+
+logger = logging.getLogger(__name__)
 
 def create_session(user_id, ip_address, user_agent):
     """
@@ -118,7 +121,7 @@ def cleanup_expired_sessions():
     """
     
     result = execute_query(query)
-    print(f"Cleaned up {result} expired sessions")
+    logger.info("Cleaned up %s expired sessions", result)
 
 def get_user_sessions(user_id):
     """

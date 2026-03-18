@@ -11,6 +11,7 @@ from flask_talisman import Talisman
 from dotenv import load_dotenv
 import os
 import logging
+from datetime import datetime, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # Load environment variables
@@ -49,7 +50,7 @@ if os.getenv('NODE_ENV') == 'production':
     Talisman(app, force_https=force_https, strict_transport_security_max_age=31536000)
 
 # CORS configuration
-allowed_origins = os.getenv('ALLOWED_ORIGINS', 'http://localhost:5173').split(',')
+allowed_origins = [origin.strip() for origin in os.getenv('ALLOWED_ORIGINS', 'http://localhost:5173').split(',') if origin.strip()]
 CORS(app, 
      origins=allowed_origins,
      supports_credentials=True,
@@ -60,7 +61,7 @@ limiter = Limiter(
     app=app,
     key_func=get_remote_address,
     default_limits=["200 per minute", "1000 per hour"],
-    storage_uri="memory://",
+    storage_uri=os.getenv('RATELIMIT_STORAGE_URI', 'memory://'),
     default_limits_exempt_when=lambda: False
 )
 
@@ -79,7 +80,7 @@ def health_check():
     """Health check endpoint"""
     return jsonify({
         'status': 'ok',
-        'timestamp': os.popen('date').read().strip()
+        'timestamp': datetime.now(timezone.utc).isoformat()
     }), 200
 
 # Register blueprints

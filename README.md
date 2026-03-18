@@ -1,6 +1,42 @@
 # HHS-patient-portal
 Out of the box Hudson Health System Patient Portal
 
+## Production hardening checklist
+
+- Use non-local DB values in `.env` for cloud deploy (`DB_HOST`, `DB_PORT`, `DB_SSLMODE=require`).
+- Set strong `SESSION_SECRET` and `JWT_SECRET` (64+ random bytes).
+- Configure `ALLOWED_ORIGINS` to exact production domains only.
+- For multi-replica deployments, set `RATELIMIT_STORAGE_URI` to Redis instead of `memory://`.
+- Keep `FORCE_HTTPS=false` in Azure Container Apps if TLS terminates at ingress.
+- Store sensitive values in Azure secrets; never commit `.env`.
+
+## HIPAA compliance and security review
+
+The app includes baseline controls aligned to HIPAA Security Rule safeguards:
+
+- Administrative: audit logging retention controls via `AUDIT_LOG_RETENTION_DAYS`.
+- Technical: role-based auth, session timeout, account lockout, password policy, request rate limiting.
+- Transmission/storage: TLS at ingress, DB SSL mode support, server-side secret usage.
+
+Before go-live, validate these required controls in your environment:
+
+1. Encrypt backups and database storage at rest.
+2. Enable centralized immutable audit log export (SIEM/Sentinel).
+3. Enforce MFA for all clinical/admin users.
+4. Run quarterly access reviews and least-privilege checks.
+5. Maintain BAA coverage for all vendors handling PHI.
+6. Establish incident response and breach notification runbooks.
+
+See `DEPLOYMENT.md` and `.env.example` for deployment/runtime settings.
+
+### Apply incremental DB hardening (existing environments)
+
+Run after deploy to backfill new constraints/indexes without recreating schema:
+
+```bash
+psql "$DATABASE_URL" -f server/db/03-hardening.sql
+```
+
 ## Azure production deploy (terminal)
 
 This repo includes `azure-deploy.sh` to deploy API + web to Azure Container Apps.

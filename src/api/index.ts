@@ -6,6 +6,7 @@
 import bcryptjs from 'bcryptjs';
 
 const API_BASE_URL = (import.meta as any).env.VITE_API_URL || '';
+const API_REQUEST_TIMEOUT_MS = 15000;
 
 interface ApiResponse<T = any> {
   data?: T;
@@ -33,16 +34,26 @@ async function request<T>(
       headers['Authorization'] = `Bearer ${token}`;
     }
     
+    const abortController = new AbortController();
+    const timeoutId = window.setTimeout(() => abortController.abort(), API_REQUEST_TIMEOUT_MS);
+
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
       headers,
+      signal: abortController.signal,
     });
-    
-    const data = await response.json();
+
+    window.clearTimeout(timeoutId);
+
+    let data: any = null;
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      data = await response.json();
+    }
     
     if (!response.ok) {
       return {
-        error: data.error || `HTTP ${response.status}: ${response.statusText}`,
+        error: data?.error || `HTTP ${response.status}: ${response.statusText}`,
       };
     }
     

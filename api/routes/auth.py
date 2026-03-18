@@ -4,8 +4,10 @@ Handles user registration, login, logout, and password management
 """
 
 from flask import Blueprint, request, jsonify
+from flask import current_app
 from datetime import datetime, timedelta
 import os
+import bcrypt
 
 from api.db.connection import execute_query
 from api.utils.security import (
@@ -30,7 +32,7 @@ def register():
     Register a new user (patient)
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         
         # Validate required fields
         required = ['username', 'email', 'password', 'firstName', 'lastName', 'dateOfBirth']
@@ -101,7 +103,7 @@ def register():
         }), 201
         
     except Exception as e:
-        print(f"Registration error: {e}")
+        current_app.logger.exception("Registration error")
         return jsonify({'error': 'Registration failed'}), 500
 
 @auth_bp.route('/salt', methods=['POST'])
@@ -112,7 +114,7 @@ def get_salt():
     This endpoint is intentionally public to allow login-time salt retrieval
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         
         if not data or 'username' not in data:
             return jsonify({'error': 'Username required'}), 400
@@ -120,18 +122,17 @@ def get_salt():
         username = data['username']
         
         # Get user's salt
-        user_query = "SELECT salt FROM users WHERE username = %s"
+        user_query = "SELECT salt FROM users WHERE username = %s AND is_active = true"
         user = execute_query(user_query, (username,), fetch_one=True)
         
-        if not user:
-            # Return a generic error to avoid username enumeration
-            # Still return a dummy salt so timing attacks are harder
-            return jsonify({'error': 'User not found'}), 404
-        
+        if not user or not user.get('salt'):
+            dummy_salt = bcrypt.gensalt(rounds=10).decode('utf-8')
+            return jsonify({'salt': dummy_salt}), 200
+
         return jsonify({'salt': user['salt']}), 200
         
     except Exception as e:
-        print(f"Salt retrieval error: {e}")
+        current_app.logger.exception("Salt retrieval error")
         return jsonify({'error': 'Salt retrieval failed'}), 500
 
 @auth_bp.route('/login', methods=['POST'])
@@ -142,7 +143,7 @@ def login():
     Authenticate user and create session
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         
         if not data or 'username' not in data or 'password' not in data:
             return jsonify({'error': 'Username and password required'}), 400
@@ -216,7 +217,7 @@ def login():
         # Reset failed login attempts
         reset_query = """
             UPDATE users 
-            SET failed_login_attempts = 0, account_locked_until = NULL 
+            SET failed_login_attempts = 0, account_locked_until = NULL, last_login = NOW()
             WHERE id = %s
         """
         execute_query(reset_query, (user['id'],))
@@ -250,7 +251,7 @@ def login():
         }), 200
         
     except Exception as e:
-        print(f"Login error: {e}")
+        current_app.logger.exception("Login error")
         return jsonify({'error': 'Login failed'}), 500
 
 @auth_bp.route('/logout', methods=['POST'])
@@ -270,7 +271,7 @@ def logout():
         return jsonify({'message': 'Logout successful'}), 200
         
     except Exception as e:
-        print(f"Logout error: {e}")
+        current_app.logger.exception("Logout error")
         return jsonify({'error': 'Logout failed'}), 500
 
 @auth_bp.route('/change-password', methods=['POST'])
@@ -281,7 +282,7 @@ def change_password():
     Change user password
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         
         if not data or 'currentPassword' not in data or 'newPassword' not in data:
             return jsonify({'error': 'Current and new password required'}), 400
@@ -289,8 +290,12 @@ def change_password():
         current_password = data['currentPassword']
         new_password = data['newPassword']
         
-        # Validate new password strength (note: for bcryptjs hashes this might not work the same)
-        # Skip strength validation for now since hashes don't have readable patterns
+        password_validation = validate_password_strength(new_password)
+        if not password_validation['valid']:
+            return jsonify({
+                'error': 'Password does not meet security requirements',
+                'details': password_validation['errors']
+            }), 400
         
         # Get user's current password hash and salt
         user_query = "SELECT password_hash, salt FROM users WHERE id = %s"
@@ -329,7 +334,7 @@ def change_password():
         return jsonify({'message': 'Password changed successfully'}), 200
         
     except Exception as e:
-        print(f"Password change error: {e}")
+        current_app.logger.exception("Password change error")
         return jsonify({'error': 'Password change failed'}), 500
 
 @auth_bp.route('/my-salt', methods=['GET'])
@@ -350,7 +355,7 @@ def get_my_salt():
         return jsonify({'salt': user['salt']}), 200
         
     except Exception as e:
-        print(f"Salt retrieval error: {e}")
+        current_app.logger.exception("Salt retrieval error")
         return jsonify({'error': 'Salt retrieval failed'}), 500
 
 @auth_bp.route('/me', methods=['GET'])
@@ -363,5 +368,5 @@ def get_current_user():
     try:
         return jsonify({'user': request.user}), 200
     except Exception as e:
-        print(f"Get user error: {e}")
+        current_app.logger.exception("Get user error")
         return jsonify({'error': 'Failed to get user information'}), 500

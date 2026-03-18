@@ -7,6 +7,7 @@ import bcrypt
 import secrets
 import os
 import re
+import hmac
 from datetime import datetime, timedelta
 
 # HIPAA-compliant password hashing
@@ -67,7 +68,7 @@ def verify_client_hashed_password(client_hash, stored_hash):
     Returns:
         bool: True if hashes match
     """
-    return client_hash == stored_hash
+    return hmac.compare_digest(client_hash, stored_hash)
 
 def generate_session_token():
     """Generate secure session token"""

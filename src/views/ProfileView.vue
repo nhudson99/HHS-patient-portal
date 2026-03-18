@@ -89,7 +89,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { authApi } from '@/api'
 
@@ -102,19 +102,26 @@ type StoredUser = {
 
 const route = useRoute()
 const router = useRouter()
+const currentUser = ref<StoredUser | null>(null)
 
-const storedUser = localStorage.getItem('currentUser')
-let parsedUser: StoredUser | null = null
+function loadCurrentUser() {
+  const storedUser = localStorage.getItem('currentUser')
+  if (!storedUser) {
+    currentUser.value = null
+    return
+  }
 
-if (storedUser) {
   try {
-    parsedUser = JSON.parse(storedUser) as StoredUser
+    currentUser.value = JSON.parse(storedUser) as StoredUser
   } catch {
-    parsedUser = null
+    currentUser.value = null
   }
 }
 
-const currentUser = computed(() => parsedUser)
+onMounted(() => {
+  loadCurrentUser()
+})
+
 const formattedRole = computed(() => {
   const role = currentUser.value?.role
   if (!role) return 'Unknown'
@@ -150,6 +157,11 @@ async function handlePasswordChange() {
 
   if (form.newPassword.length < 8) {
     state.errorMessage = 'New password must be at least 8 characters.'
+    return
+  }
+
+  if (!/[a-z]/.test(form.newPassword) || !/[A-Z]/.test(form.newPassword) || !/\d/.test(form.newPassword) || !/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]/.test(form.newPassword)) {
+    state.errorMessage = 'Password must include upper/lowercase letters, a number, and a special character.'
     return
   }
 
