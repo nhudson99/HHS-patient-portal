@@ -114,6 +114,7 @@ const userName = computed(() => {
 })
 
 const pageTitle = computed(() => {
+  if (route.path.startsWith('/profile')) return 'My Profile'
   if (route.path.startsWith('/patients')) return 'Patients'
   if (route.path.startsWith('/doctor')) return 'Doctor Dashboard'
   if (route.path.startsWith('/patient')) return 'Patient Dashboard'
@@ -125,13 +126,15 @@ const navButtons = computed<NavButton[]>(() => {
   if (currentUser.value.role === 'doctor') {
     return [
       { label: 'Home', to: '/doctor' },
-      { label: 'Patients', to: '/patients' }
+      { label: 'Patients', to: '/patients' },
+      { label: 'Profile', to: '/profile' }
     ]
   }
   if (currentUser.value.role === 'patient') {
     return [
       { label: 'Home', to: '/patient' },
-      { label: 'Check In', to: '/checkin' }
+      { label: 'Check In', to: '/checkin' },
+      { label: 'Profile', to: '/profile' }
     ]
   }
   return []
@@ -292,6 +295,11 @@ body {
 
 .header-btn:hover {
   background: rgba(255,255,255,0.3);
+}
+
+.header-btn.router-link-active {
+  background: rgba(255,255,255,0.35);
+  font-weight: 700;
 }
 
 .logout-btn {

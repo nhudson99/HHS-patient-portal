@@ -38,6 +38,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, role: 'patient' }
   },
   {
+    path: '/profile',
+    name: 'Profile',
+    component: () => import('@/views/ProfileView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     // Admin portal — access via Microsoft SSO (@hudsonitconsulting.com only).
     // Auth is handled entirely inside AdminView; no portal session required to reach this route.
     path: '/admin',

@@ -39,23 +39,6 @@
           {{ error }}
         </div>
       </form>
-
-      <div class="demo-credentials">
-        <h3>Demo Credentials</h3>
-        <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
-          Register a new account or use test credentials below
-        </p>
-        <div class="credentials-section">
-          <strong>Test Patient:</strong>
-          <p>Username: patient1</p>
-          <p>Password: Patient123!</p>
-        </div>
-        <div class="credentials-section">
-          <strong>Test Doctor:</strong>
-          <p>Username: doctor1</p>
-          <p>Password: Doctor123!</p>
-        </div>
-      </div>
     </div>
   </div>
 </template>
@@ -101,10 +84,9 @@ const handleLogin = async () => {
       
       console.log('Login successful, user role:', response.data.user.role)
       
-      // Check if password change is required
       if (response.data.requirePasswordChange) {
-        // TODO: Redirect to password change page
-        console.warn('Password change required')
+        router.push({ path: '/profile', query: { password: 'required' } })
+        return
       }
       
       // Redirect based on user role
@@ -221,37 +203,6 @@ input:focus {
   border-radius: 6px;
   text-align: center;
   font-size: 14px;
-}
-
-.demo-credentials {
-  border-top: 1px solid #eee;
-  padding-top: 20px;
-}
-
-.demo-credentials h3 {
-  font-size: 16px;
-  color: #555;
-  margin-bottom: 15px;
-  text-align: center;
-}
-
-.credentials-section {
-  background: #f8f9fa;
-  padding: 12px;
-  border-radius: 6px;
-  margin-bottom: 10px;
-  font-size: 13px;
-}
-
-.credentials-section strong {
-  color: #667eea;
-  display: block;
-  margin-bottom: 5px;
-}
-
-.credentials-section p {
-  margin: 2px 0;
-  color: #666;
 }
 
 .checkin-link {
