@@ -53,18 +53,42 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Validate required deploy config
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_NAME: ${{ vars.DB_NAME || secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS || secrets.ALLOWED_ORIGINS }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        run: |
+          missing=0
+          for key in DB_HOST DB_NAME DB_USER DB_PASSWORD SESSION_SECRET JWT_SECRET ALLOWED_ORIGINS AZURE_TENANT_ID AZURE_CLIENT_ID; do
+            value="${!key:-}"
+            if [[ -z "$value" ]]; then
+              echo "::error::Missing required GitHub Actions config: $key"
+              missing=1
+            fi
+          done
+          if [[ "$missing" -ne 0 ]]; then
+            exit 1
+          fi
+
       - name: Write deploy env file
         run: |
           cat > .env.github-actions <<EOF
           DB_HOST=${{ secrets.DB_HOST }}
           DB_PORT=${{ vars.DB_PORT || '5432' }}
-          DB_NAME=${{ vars.DB_NAME }}
+          DB_NAME=${{ vars.DB_NAME || secrets.DB_NAME }}
           DB_USER=${{ secrets.DB_USER }}
           DB_PASSWORD=${{ secrets.DB_PASSWORD }}
           DB_SSLMODE=${{ vars.DB_SSLMODE || 'require' }}
           SESSION_SECRET=${{ secrets.SESSION_SECRET }}
           JWT_SECRET=${{ secrets.JWT_SECRET }}
-          ALLOWED_ORIGINS=${{ vars.ALLOWED_ORIGINS }}
+          ALLOWED_ORIGINS=${{ vars.ALLOWED_ORIGINS || secrets.ALLOWED_ORIGINS }}
           AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}
           VITE_AZURE_REDIRECT_URI=${{ vars.VITE_AZURE_REDIRECT_URI }}
