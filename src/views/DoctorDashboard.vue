@@ -592,9 +592,14 @@ function getAppointmentStatus(event: Event): string {
 function formatEventTime(timeStr: string): string {
   if (!timeStr) return ''
   const [h, m] = timeStr.split(':')
-  const hour = parseInt(h)
+  const hour = Number.parseInt(h, 10)
   const ampm = hour >= 12 ? 'PM' : 'AM'
-  const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour
+  let displayHour = hour
+  if (displayHour === 0) {
+    displayHour = 12
+  } else if (displayHour > 12) {
+    displayHour -= 12
+  }
   return `${displayHour}:${m} ${ampm}`
 }
 
@@ -633,8 +638,10 @@ async function loadEvents() {
     const weekEnd = endOfWeek(currentDate.value)
     
     // Use the earlier of monthStart/weekStart and later of monthEnd/weekEnd
-    const start = formatDate(monthStart < weekStart ? monthStart : weekStart, 'yyyy-MM-dd')
-    const end = formatDate(monthEnd > weekEnd ? monthEnd : weekEnd, 'yyyy-MM-dd')
+    const rangeStartDate = new Date(Math.min(monthStart.getTime(), weekStart.getTime()))
+    const rangeEndDate = new Date(Math.max(monthEnd.getTime(), weekEnd.getTime()))
+    const start = formatDate(rangeStartDate, 'yyyy-MM-dd')
+    const end = formatDate(rangeEndDate, 'yyyy-MM-dd')
 
     const response = await fetch(`/api/events?start_date=${start}&end_date=${end}`, {
       headers: {
@@ -919,8 +926,8 @@ onMounted(() => {
   margin-top: 4px;
   padding: 2px 8px;
   background: rgba(255, 255, 255, 0.9);
-  color: #10b981;
-  border: 1px solid #10b981;
+  color: #047857;
+  border: 1px solid #047857;
   border-radius: 3px;
   font-size: 0.75rem;
   font-weight: 600;
@@ -929,13 +936,14 @@ onMounted(() => {
 }
 
 .confirm-btn:hover {
-  background: #10b981;
+  background: #047857;
   color: white;
 }
 
 .event-time {
   font-size: 0.75rem;
-  opacity: 0.9;
+  opacity: 1;
+  color: #f8fafc;
 }
 
 .event-title {

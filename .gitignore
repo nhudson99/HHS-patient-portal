@@ -5,6 +5,7 @@ dist
 .env
 .env.local
 .env.*.local
+.env.sonarqube.local
 
 # Python
 api/__pycache__/
@@ -20,3 +21,5 @@ ENV/
 # TypeScript server (legacy)
 server/
 coverage/
+.scannerwork/
+.sonar/

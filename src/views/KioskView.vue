@@ -223,15 +223,15 @@ function formatDateTime(dateStr: string) {
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 onMounted(() => {
-  window.addEventListener('mousemove', resetInactivityTimer)
-  window.addEventListener('touchstart', resetInactivityTimer)
+  globalThis.addEventListener('mousemove', resetInactivityTimer)
+  globalThis.addEventListener('touchstart', resetInactivityTimer)
 })
 
 onUnmounted(() => {
   stopCountdown()
   clearInactivityTimer()
-  window.removeEventListener('mousemove', resetInactivityTimer)
-  window.removeEventListener('touchstart', resetInactivityTimer)
+  globalThis.removeEventListener('mousemove', resetInactivityTimer)
+  globalThis.removeEventListener('touchstart', resetInactivityTimer)
 })
 </script>
 
@@ -327,13 +327,14 @@ h2 {
 }
 
 .kiosk-btn.primary:disabled {
-  opacity: 0.65;
+  background: #1e40af;
+  color: #ffffff;
   cursor: wait;
 }
 
 .kiosk-btn.secondary {
   background: #f0f2f5;
-  color: #546e7a;
+  color: #334155;
   box-shadow: none;
 }
 
@@ -395,7 +396,7 @@ input:focus {
 .success-icon {
   width: 90px;
   height: 90px;
-  background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%);
+  background: linear-gradient(135deg, #2e7d32 0%, #1b5e20 100%);
   color: #fff;
   border-radius: 50%;
   display: flex;

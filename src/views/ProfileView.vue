@@ -160,7 +160,7 @@ async function handlePasswordChange() {
     return
   }
 
-  if (!/[a-z]/.test(form.newPassword) || !/[A-Z]/.test(form.newPassword) || !/\d/.test(form.newPassword) || !/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]/.test(form.newPassword)) {
+  if (!/[a-z]/.test(form.newPassword) || !/[A-Z]/.test(form.newPassword) || !/\d/.test(form.newPassword) || !/[^a-zA-Z0-9]/.test(form.newPassword)) {
     state.errorMessage = 'Password must include upper/lowercase letters, a number, and a special character.'
     return
   }
@@ -191,7 +191,7 @@ async function handlePasswordChange() {
     form.confirmPassword = ''
 
     if (isForcedPasswordChange.value) {
-      window.setTimeout(() => {
+      globalThis.setTimeout(() => {
         router.push(homeRoute.value)
       }, 1200)
     }
@@ -338,7 +338,7 @@ async function handlePasswordChange() {
 
 .field-help {
   margin: 0.45rem 0 0;
-  color: #64748b;
+  color: #475569;
   font-size: 0.85rem;
 }
 
@@ -369,14 +369,15 @@ async function handlePasswordChange() {
   border: none;
   border-radius: 10px;
   padding: 0.85rem 1.3rem;
-  background: linear-gradient(135deg, #6366f1 0%, #7c3aed 100%);
+  background: linear-gradient(135deg, #4338ca 0%, #6d28d9 100%);
   color: #ffffff;
   font-size: 0.98rem;
   font-weight: 700;
 }
 
 .primary-btn:disabled {
-  opacity: 0.65;
+  background: #312e81;
+  color: #ffffff;
   cursor: not-allowed;
 }
 

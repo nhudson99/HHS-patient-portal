@@ -44,19 +44,19 @@
 
         <div class="detail-grid">
           <div class="detail-card">
-            <label>Date of Birth</label>
+            <p class="detail-label">Date of Birth</p>
             <div>{{ formatDate(selectedPatient.date_of_birth) }}</div>
           </div>
           <div class="detail-card">
-            <label>Phone</label>
+            <p class="detail-label">Phone</p>
             <div>{{ selectedPatient.phone }}</div>
           </div>
           <div class="detail-card">
-            <label>Address</label>
+            <p class="detail-label">Address</p>
             <div>{{ selectedPatient.address || '—' }}</div>
           </div>
           <div class="detail-card">
-            <label>Emergency Contact</label>
+            <p class="detail-label">Emergency Contact</p>
             <div>
               {{ selectedPatient.emergency_contact_name || '—' }}
               <span v-if="selectedPatient.emergency_contact_phone">
@@ -65,7 +65,7 @@
             </div>
           </div>
           <div class="detail-card" v-if="selectedPatient.portal_email">
-            <label>Portal Email</label>
+            <p class="detail-label">Portal Email</p>
             <div>{{ selectedPatient.portal_email }}</div>
           </div>
         </div>
@@ -167,12 +167,13 @@
         </div>
         <div class="modal-content">
           <div class="form-group">
-            <label>Name *</label>
-            <input v-model="propertyForm.name" type="text" placeholder="Property name" />
+            <label for="property-name">Name *</label>
+            <input id="property-name" v-model="propertyForm.name" type="text" placeholder="Property name" />
           </div>
           <div class="form-group">
-            <label>Description</label>
+            <label for="property-description">Description</label>
             <textarea
+              id="property-description"
               v-model="propertyForm.description"
               rows="4"
               placeholder="Detailed notes"
@@ -207,8 +208,8 @@
         </div>
         <div class="modal-content">
           <div class="form-group">
-            <label>Title</label>
-            <input v-model="renameForm.title" type="text" placeholder="Document title" />
+            <label for="rename-document-title">Title</label>
+            <input id="rename-document-title" v-model="renameForm.title" type="text" placeholder="Document title" />
           </div>
         </div>
         <div class="modal-actions">
@@ -331,6 +332,7 @@ async function loadPatients() {
     const data = await response.json()
     patients.value = data.patients || []
   } catch (err) {
+    console.error('Failed to load patients:', err)
     error.value = 'Failed to load patients'
   } finally {
     loading.value = false
@@ -361,6 +363,7 @@ async function loadProperties() {
     patientProperties.value = data.properties || []
     expandedProperties.value = new Set()
   } catch (err) {
+    console.error('Failed to load properties:', err)
     propertiesError.value = 'Failed to load properties'
   } finally {
     propertiesLoading.value = false
@@ -393,6 +396,7 @@ async function saveProperty() {
     expandedProperties.value = new Set(expandedProperties.value).add(data.property.property_id)
     showAddDialog.value = false
   } catch (err) {
+    console.error('Failed to add property:', err)
     propertiesError.value = 'Failed to add property'
   }
 }
@@ -421,6 +425,7 @@ async function deleteProperty() {
     )
     cancelDelete()
   } catch (err) {
+    console.error('Failed to delete property:', err)
     propertiesError.value = 'Failed to delete property'
   }
 }
@@ -458,6 +463,7 @@ async function loadDocuments() {
     const data = await response.json()
     documents.value = data.documents || []
   } catch (err) {
+    console.error('Failed to load documents:', err)
     documentsError.value = 'Failed to load documents'
   } finally {
     documentsLoading.value = false
@@ -479,8 +485,8 @@ async function handleFileUpload(event: Event) {
   
   try {
     const formData = new FormData()
-    for (let i = 0; i < files.length; i++) {
-      formData.append('files', files[i])
+    for (const file of Array.from(files)) {
+      formData.append('files', file)
     }
     
     const response = await fetch(`/api/documents/${selectedPatientId.value}`, {
@@ -504,6 +510,7 @@ async function handleFileUpload(event: Event) {
       documentsError.value = data.errors.join(', ')
     }
   } catch (err) {
+    console.error('Failed to upload files:', err)
     documentsError.value = 'Failed to upload files'
   } finally {
     uploadProgress.value = false
@@ -528,15 +535,16 @@ async function downloadDocument(doc: PatientDocument) {
     }
     
     const blob = await response.blob()
-    const url = window.URL.createObjectURL(blob)
+    const url = globalThis.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
     a.download = doc.title || doc.file_name
     document.body.appendChild(a)
     a.click()
-    window.URL.revokeObjectURL(url)
-    document.body.removeChild(a)
+    globalThis.URL.revokeObjectURL(url)
+    a.remove()
   } catch (err) {
+    console.error('Failed to download document:', err)
     documentsError.value = 'Failed to download document'
   }
 }
@@ -575,6 +583,7 @@ async function renameDocument() {
     }
     showRenameDialog.value = false
   } catch (err) {
+    console.error('Failed to rename document:', err)
     documentsError.value = 'Failed to rename document'
   }
 }
@@ -608,6 +617,7 @@ async function deleteDocument() {
     documents.value = documents.value.filter(d => d.id !== pendingDeleteDoc.value?.id)
     cancelDeleteDocument()
   } catch (err) {
+    console.error('Failed to delete document:', err)
     documentsError.value = 'Failed to delete document'
   }
 }
@@ -846,11 +856,17 @@ function formatFileSize(bytes: number): string {
 .delete-btn {
   border: none;
   background: #fee2e2;
-  color: #dc2626;
+  color: #991b1b;
   padding: 0.35rem 0.7rem;
   border-radius: 6px;
   font-size: 0.85rem;
   cursor: pointer;
+}
+
+.detail-label {
+  font-weight: 600;
+  color: #374151;
+  margin: 0 0 0.25rem;
 }
 
 .accordion-body {

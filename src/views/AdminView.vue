@@ -392,17 +392,19 @@ function authHeaders(): Record<string, string> {
 }
 
 async function apiRequest(url: string, options: RequestInit = {}) {
+  const requestHeaders = (options.headers as Record<string, string> | undefined)
+
   const res = await fetch(url, {
     ...options,
     headers: {
-      ...(options.headers || {}),
+      ...requestHeaders,
       ...authHeaders()
     }
   })
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.error || `Request failed (${res.status})`)
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.error || `Request failed (${res.status})`)
   }
 
   return res.json()
@@ -602,19 +604,19 @@ function getEmailFromResult(result: AuthenticationResult): string {
 }
 
 function hasAuthCallbackInUrl(): boolean {
-  const search = new URLSearchParams(window.location.search)
+  const search = new URLSearchParams(globalThis.location.search)
   if (search.has('code') || search.has('error') || search.has('state') || search.has('session_state')) {
     return true
   }
 
-  const hash = window.location.hash
+  const hash = globalThis.location.hash
   return hash.includes('code=') || hash.includes('error=') || hash.includes('state=')
 }
 
 function normalizeAdminUrl(): void {
   const target = '/admin'
-  if (window.location.pathname !== target || window.location.search || window.location.hash) {
-    window.history.replaceState({}, document.title, target)
+  if (globalThis.location.pathname !== target || globalThis.location.search || globalThis.location.hash) {
+    globalThis.history.replaceState(null, document.title, target)
   }
 }
 
@@ -625,7 +627,7 @@ async function clearMsalAccount(account?: AccountInfo): Promise<void> {
 
   await msalInstance.logoutRedirect({
     account,
-    postLogoutRedirectUri: `${window.location.origin}/admin`
+      postLogoutRedirectUri: `${globalThis.location.origin}/admin`
   }).catch(() => {})
 }
 
@@ -645,7 +647,7 @@ async function completeSignIn(result: AuthenticationResult): Promise<boolean> {
   })
 
   if (!verifyRes.ok) {
-    const body = await verifyRes.json().catch(() => ({}))
+    const body = await verifyRes.json().catch(() => null)
     loginError.value = body.error ?? 'Server rejected the login. Please try again.'
     return false
   }
@@ -730,7 +732,7 @@ async function signOut() {
   if (accounts.length > 0) {
     await msalInstance.logoutRedirect({
       account: accounts[0],
-      postLogoutRedirectUri: `${window.location.origin}/admin`
+      postLogoutRedirectUri: `${globalThis.location.origin}/admin`
     }).catch(() => {})
   }
 }
@@ -892,7 +894,7 @@ async function signOut() {
 }
 
 .admin-badge {
-  background: rgba(255,255,255,0.2);
+  background: rgba(15, 23, 42, 0.45);
   color: #fff;
   font-size: 11px;
   font-weight: 700;
@@ -902,13 +904,13 @@ async function signOut() {
 }
 
 .admin-username {
-  color: #e2e8f0;
+  color: #ffffff;
   font-size: 14px;
 }
 
 .admin-logout-btn {
-  background: rgba(255,255,255,0.15);
-  border: 1px solid rgba(255,255,255,0.3);
+  background: rgba(15, 23, 42, 0.28);
+  border: 1px solid rgba(255,255,255,0.45);
   color: #fff;
   border-radius: 6px;
   padding: 6px 14px;
@@ -918,7 +920,7 @@ async function signOut() {
 }
 
 .admin-logout-btn:hover {
-  background: rgba(255,255,255,0.25);
+  background: rgba(15, 23, 42, 0.4);
 }
 
 .admin-main {
@@ -1163,11 +1165,11 @@ async function signOut() {
 .card-btn {
   margin-top: 12px;
   padding: 8px 16px;
-  background: #e5e7eb;
+  background: #cbd5e1;
   border: none;
   border-radius: 6px;
   font-size: 13px;
-  color: #9ca3af;
+  color: #334155;
   cursor: not-allowed;
   align-self: flex-start;
 }

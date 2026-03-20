@@ -113,6 +113,14 @@ Coverage outputs:
 
 This repo includes `sonar-project.properties` configured for `src/` + `api/` and both coverage reports.
 
+For convenience, you can store scanner credentials in a local file that is ignored by git:
+
+```bash
+cp .env.sonarqube.local.example .env.sonarqube.local
+```
+
+Then edit `.env.sonarqube.local` with your real values. Sonar scripts automatically load it.
+
 ### Local SonarQube host (recommended for setup)
 
 This repo includes a local SonarQube + PostgreSQL stack:

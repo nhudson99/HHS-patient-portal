@@ -9,6 +9,7 @@ from api.db.connection import execute_query
 from api.middleware.auth import authenticate
 
 patients_bp = Blueprint('patients', __name__, url_prefix='/api/patients')
+INSUFFICIENT_PERMISSIONS_ERROR = 'Insufficient permissions'
 
 
 def serialize_patient(patient):
@@ -16,9 +17,7 @@ def serialize_patient(patient):
         return None
     result = dict(patient)
     for key, value in result.items():
-        if isinstance(value, datetime):
-            result[key] = value.isoformat()
-        elif isinstance(value, date):
+        if isinstance(value, (datetime, date)):
             result[key] = value.isoformat()
     return result
 
@@ -28,9 +27,7 @@ def serialize_doctor(doctor):
         return None
     result = dict(doctor)
     for key, value in result.items():
-        if isinstance(value, datetime):
-            result[key] = value.isoformat()
-        elif isinstance(value, date):
+        if isinstance(value, (datetime, date)):
             result[key] = value.isoformat()
     return result
 
@@ -41,7 +38,7 @@ def list_doctors():
     try:
         user = request.user
         if user.get('role') not in ['patient', 'doctor']:
-            return jsonify({'error': 'Insufficient permissions'}), 403
+            return jsonify({'error': INSUFFICIENT_PERMISSIONS_ERROR}), 403
 
         query = """
             SELECT d.id, d.user_id, d.first_name, d.last_name, d.specialty,
@@ -66,7 +63,7 @@ def get_my_patient_record():
     try:
         user = request.user
         if user.get('role') != 'patient':
-            return jsonify({'error': 'Insufficient permissions'}), 403
+            return jsonify({'error': INSUFFICIENT_PERMISSIONS_ERROR}), 403
 
         query = """
             SELECT p.id, p.user_id, p.first_name, p.last_name, p.date_of_birth,
@@ -95,7 +92,7 @@ def list_patients():
     try:
         user = request.user
         if user.get('role') != 'doctor':
-            return jsonify({'error': 'Insufficient permissions'}), 403
+            return jsonify({'error': INSUFFICIENT_PERMISSIONS_ERROR}), 403
 
         query = """
             SELECT p.id, p.user_id, p.first_name, p.last_name, p.date_of_birth,

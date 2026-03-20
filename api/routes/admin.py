@@ -37,6 +37,11 @@ admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
 ALLOWED_DOMAIN = 'hudsonitconsulting.com'
 _TENANT_ID = os.getenv('AZURE_TENANT_ID', '')
 _CLIENT_ID = os.getenv('AZURE_CLIENT_ID', '')
+BCRYPT_ROUNDS = int(os.getenv('BCRYPT_ROUNDS', 12))
+DEFAULT_LIST_LIMIT = 100
+MAX_LIST_LIMIT = 500
+DOCTOR_NOT_FOUND_ERROR = 'Doctor not found'
+PATIENT_NOT_FOUND_ERROR = 'Patient not found'
 
 
 def _get_valid_issuers(tenant_id: str) -> set[str]:
@@ -119,6 +124,95 @@ def _extract_bearer_token() -> str:
     return auth_header[7:]
 
 
+def _error_response(message: str, status_code: int):
+    return jsonify({'error': message}), status_code
+
+
+def _map_admin_auth_exception(exc: Exception):
+    if isinstance(exc, ValueError):
+        return _error_response(str(exc), 401)
+    if isinstance(exc, PermissionError):
+        return _error_response(str(exc), 403)
+    if isinstance(exc, PyJWKClientError):
+        logger.warning('JWKS lookup failed: %s', exc)
+        return _error_response('Token validation failed (JWKS)', 401)
+    if isinstance(exc, jwt.ExpiredSignatureError):
+        return _error_response('Token has expired', 401)
+    if isinstance(exc, jwt.InvalidIssuerError):
+        return _error_response('Token issuer is not trusted', 401)
+    if isinstance(exc, jwt.InvalidAudienceError):
+        return _error_response('Token audience mismatch', 401)
+    if isinstance(exc, jwt.PyJWTError):
+        logger.warning('JWT decode error: %s', exc)
+        return _error_response('Invalid token', 401)
+    if isinstance(exc, RuntimeError):
+        logger.error('Admin SSO config error: %s', exc)
+        return _error_response(str(exc), 503)
+    return None
+
+
+def _clean_text(value) -> str:
+    return str(value or '').strip()
+
+
+def _clean_optional(value):
+    cleaned = _clean_text(value)
+    return cleaned or None
+
+
+def _clean_data_value(data: dict, key: str, fallback='') -> str:
+    if key in data and data.get(key) is not None:
+        return _clean_text(data.get(key))
+    return _clean_text(fallback)
+
+
+def _optional_data_value(data: dict, key: str, fallback=None):
+    if key in data:
+        return _clean_optional(data.get(key))
+    return _clean_optional(fallback)
+
+
+def _existing_date_iso(existing: dict, key: str) -> str:
+    value = existing.get(key)
+    if not value:
+        return ''
+    if hasattr(value, 'isoformat'):
+        return value.isoformat()
+    return str(value)
+
+
+def _build_patient_insert_values(data: dict, user_id: str):
+    return (
+        user_id,
+        _clean_data_value(data, 'firstName'),
+        _clean_data_value(data, 'lastName'),
+        _optional_data_value(data, 'dateOfBirth'),
+        _optional_data_value(data, 'phone'),
+        _optional_data_value(data, 'address'),
+        _optional_data_value(data, 'city'),
+        _optional_data_value(data, 'state'),
+        _optional_data_value(data, 'zipCode'),
+        _optional_data_value(data, 'emergencyContactName'),
+        _optional_data_value(data, 'emergencyContactPhone'),
+    )
+
+
+def _build_patient_update_values(data: dict, existing: dict, patient_id: str):
+    return (
+        _clean_data_value(data, 'firstName', existing.get('first_name')),
+        _clean_data_value(data, 'lastName', existing.get('last_name')),
+        _optional_data_value(data, 'dateOfBirth', _existing_date_iso(existing, 'date_of_birth')),
+        _optional_data_value(data, 'phone', existing.get('phone')),
+        _optional_data_value(data, 'address', existing.get('address')),
+        _optional_data_value(data, 'city', existing.get('city')),
+        _optional_data_value(data, 'state', existing.get('state')),
+        _optional_data_value(data, 'zipCode', existing.get('zip_code')),
+        _optional_data_value(data, 'emergencyContactName', existing.get('emergency_contact_name')),
+        _optional_data_value(data, 'emergencyContactPhone', existing.get('emergency_contact_phone')),
+        patient_id,
+    )
+
+
 def require_admin_sso(f):
     """Decorator enforcing valid Microsoft admin token for admin management APIs."""
     @wraps(f)
@@ -127,25 +221,11 @@ def require_admin_sso(f):
             token = _extract_bearer_token()
             request.admin_claims = _verify_token_or_raise(token)
             return f(*args, **kwargs)
-        except ValueError as exc:
-            return jsonify({'error': str(exc)}), 401
-        except PermissionError as exc:
-            return jsonify({'error': str(exc)}), 403
-        except PyJWKClientError as exc:
-            logger.warning('JWKS lookup failed: %s', exc)
-            return jsonify({'error': 'Token validation failed (JWKS)'}), 401
-        except jwt.ExpiredSignatureError:
-            return jsonify({'error': 'Token has expired'}), 401
-        except jwt.InvalidIssuerError:
-            return jsonify({'error': 'Token issuer is not trusted'}), 401
-        except jwt.InvalidAudienceError:
-            return jsonify({'error': 'Token audience mismatch'}), 401
-        except jwt.PyJWTError as exc:
-            logger.warning('JWT decode error: %s', exc)
-            return jsonify({'error': 'Invalid token'}), 401
-        except RuntimeError as exc:
-            logger.error('Admin SSO config error: %s', exc)
-            return jsonify({'error': str(exc)}), 503
+        except Exception as exc:
+            mapped = _map_admin_auth_exception(exc)
+            if mapped:
+                return mapped
+            raise
 
     return decorated
 
@@ -166,7 +246,7 @@ def _generate_temp_password() -> str:
 
 
 def _build_password_hash(password: str) -> tuple[str, str]:
-    password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt(rounds=10)).decode('utf-8')
+    password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt(rounds=BCRYPT_ROUNDS)).decode('utf-8')
     salt = password_hash[:29]
     return password_hash, salt
 
@@ -186,23 +266,11 @@ def verify_token():
     try:
         claims = _verify_token_or_raise(id_token)
 
-    except PyJWKClientError as exc:
-        logger.warning('JWKS lookup failed: %s', exc)
-        return jsonify({'error': 'Token validation failed (JWKS)'}), 401
-    except jwt.ExpiredSignatureError:
-        return jsonify({'error': 'Token has expired'}), 401
-    except jwt.InvalidIssuerError:
-        return jsonify({'error': 'Token issuer is not trusted'}), 401
-    except jwt.InvalidAudienceError:
-        return jsonify({'error': 'Token audience mismatch'}), 401
-    except jwt.PyJWTError as exc:
-        logger.warning('JWT decode error: %s', exc)
-        return jsonify({'error': 'Invalid token'}), 401
-    except PermissionError as exc:
-        return jsonify({'error': str(exc)}), 403
-    except (RuntimeError, ValueError) as exc:
-        logger.error('Admin SSO config error: %s', exc)
-        return jsonify({'error': str(exc)}), 503
+    except Exception as exc:
+        mapped = _map_admin_auth_exception(exc)
+        if mapped:
+            return mapped
+        raise
 
     email: str = (
         claims.get('preferred_username') or
@@ -310,7 +378,7 @@ def update_doctor(doctor_id):
         fetch_one=True
     )
     if not existing:
-        return jsonify({'error': 'Doctor not found'}), 404
+        return jsonify({'error': DOCTOR_NOT_FOUND_ERROR}), 404
 
     execute_query(
         """
@@ -371,7 +439,7 @@ def delete_doctor(doctor_id):
         fetch_one=True
     )
     if not row:
-        return jsonify({'error': 'Doctor not found'}), 404
+        return jsonify({'error': DOCTOR_NOT_FOUND_ERROR}), 404
 
     execute_query('DELETE FROM users WHERE id = %s', (row['user_id'],))
     return jsonify({'message': 'Doctor deleted'}), 200
@@ -411,7 +479,7 @@ def create_patient():
         VALUES (%s, %s, %s, %s, 'patient', true)
         RETURNING id, username, email, role
         """,
-        (data['username'].strip(), data['email'].strip().lower(), password_hash, salt),
+        (_clean_data_value(data, 'username'), _clean_data_value(data, 'email').lower(), password_hash, salt),
         fetch_one=True
     )
 
@@ -426,19 +494,7 @@ def create_patient():
                   address, city, state, zip_code, emergency_contact_name,
                   emergency_contact_phone, created_at, updated_at
         """,
-        (
-            user['id'],
-            data['firstName'].strip(),
-            data['lastName'].strip(),
-            (data.get('dateOfBirth') or '').strip() or None,
-            (data.get('phone') or '').strip() or None,
-            (data.get('address') or '').strip() or None,
-            (data.get('city') or '').strip() or None,
-            (data.get('state') or '').strip() or None,
-            (data.get('zipCode') or '').strip() or None,
-            (data.get('emergencyContactName') or '').strip() or None,
-            (data.get('emergencyContactPhone') or '').strip() or None,
-        ),
+        _build_patient_insert_values(data, user['id']),
         fetch_one=True
     )
 
@@ -471,7 +527,7 @@ def update_patient(patient_id):
         fetch_one=True
     )
     if not existing:
-        return jsonify({'error': 'Patient not found'}), 404
+        return jsonify({'error': PATIENT_NOT_FOUND_ERROR}), 404
 
     execute_query(
         """
@@ -482,7 +538,7 @@ def update_patient(patient_id):
         WHERE id = %s
         """,
         (
-            (data.get('email') or existing['email']).strip().lower(),
+            _clean_data_value(data, 'email', existing['email']).lower(),
             data.get('isActive', existing['is_active']),
             existing['user_id']
         )
@@ -507,24 +563,12 @@ def update_patient(patient_id):
                   address, city, state, zip_code, emergency_contact_name,
                   emergency_contact_phone, created_at, updated_at
         """,
-        (
-            (data.get('firstName') or existing['first_name']).strip(),
-            (data.get('lastName') or existing['last_name']).strip(),
-            (data.get('dateOfBirth') or (existing['date_of_birth'].isoformat() if existing['date_of_birth'] else '')).strip() or None,
-            (data.get('phone') or existing['phone'] or '').strip() or None,
-            (data.get('address') or existing['address'] or '').strip() or None,
-            (data.get('city') or existing['city'] or '').strip() or None,
-            (data.get('state') or existing['state'] or '').strip() or None,
-            (data.get('zipCode') or existing['zip_code'] or '').strip() or None,
-            (data.get('emergencyContactName') or existing['emergency_contact_name'] or '').strip() or None,
-            (data.get('emergencyContactPhone') or existing['emergency_contact_phone'] or '').strip() or None,
-            patient_id,
-        ),
+        _build_patient_update_values(data, existing, patient_id),
         fetch_one=True
     )
 
     payload = dict(updated)
-    payload['email'] = (data.get('email') or existing['email']).strip().lower()
+    payload['email'] = _clean_data_value(data, 'email', existing['email']).lower()
     payload['is_active'] = data.get('isActive', existing['is_active'])
 
     return jsonify({'patient': _serialize_rows([payload])[0]}), 200
@@ -539,7 +583,7 @@ def delete_patient(patient_id):
         fetch_one=True
     )
     if not row:
-        return jsonify({'error': 'Patient not found'}), 404
+        return jsonify({'error': PATIENT_NOT_FOUND_ERROR}), 404
 
     execute_query('DELETE FROM users WHERE id = %s', (row['user_id'],))
     return jsonify({'message': 'Patient deleted'}), 200
@@ -549,10 +593,10 @@ def delete_patient(patient_id):
 @require_admin_sso
 def get_error_logs():
     try:
-        limit = int(request.args.get('limit', '100'))
-        limit = max(1, min(limit, 500))
+        limit = int(request.args.get('limit', str(DEFAULT_LIST_LIMIT)))
+        limit = max(1, min(limit, MAX_LIST_LIMIT))
     except ValueError:
-        limit = 100
+        limit = DEFAULT_LIST_LIMIT
 
     logs = execute_query(
         """

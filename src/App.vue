@@ -32,9 +32,10 @@
         </div>
         <div class="modal-content">
           <div class="form-group">
-            <label>Description</label>
+            <label for="feature-request-description">Description</label>
             <p class="feature-request-help">Describe what you need and why — a GitHub issue will be created for the dev team to review.</p>
             <textarea
+              id="feature-request-description"
               v-model="featureRequestDescription"
               class="feature-request-textarea"
               placeholder="Describe the problem, desired behavior, and who it helps..."
@@ -145,8 +146,8 @@ const showFeatureRequestButton = computed(() => {
 })
 
 function getFeatureRequestPage(): string {
-  if (typeof window !== 'undefined') {
-    return `${window.location.pathname}${window.location.search}${window.location.hash}`
+  if (globalThis.window !== undefined) {
+    return `${globalThis.window.location.pathname}${globalThis.window.location.search}${globalThis.window.location.hash}`
   }
   return '/doctor'
 }
@@ -318,9 +319,9 @@ body {
 
 .feature-request-btn {
   padding: 0.5rem 0.85rem;
-  background: #f3e8ff;
-  color: #6d28d9;
-  border: 1px solid #d8b4fe;
+  background: #ffffff;
+  color: #4c1d95;
+  border: 1px solid #c4b5fd;
   border-radius: 999px;
   font-weight: 700;
   font-size: 0.78rem;
@@ -453,12 +454,12 @@ body {
 }
 
 .btn-primary {
-  background: #667eea;
+  background: #4f46e5;
   color: white;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #5a67d8;
+  background: #4338ca;
 }
 
 .btn-secondary {
@@ -472,7 +473,8 @@ body {
 
 .btn-primary:disabled,
 .btn-secondary:disabled {
-  opacity: 0.6;
+  background: #334155;
+  color: #e2e8f0;
   cursor: not-allowed;
 }
 

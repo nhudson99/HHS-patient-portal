@@ -9,6 +9,9 @@ from api.db.connection import execute_query
 from api.middleware.auth import authenticate
 
 appointments_bp = Blueprint('appointments', __name__, url_prefix='/api/appointments')
+APPOINTMENT_NOT_FOUND_ERROR = 'Appointment not found'
+PATIENT_ID_BY_USER_QUERY = "SELECT id FROM patients WHERE user_id = %s"
+PATIENT_RECORD_NOT_FOUND_ERROR = 'Patient record not found'
 
 
 def serialize_appointment(apt):
@@ -98,11 +101,10 @@ def get_patient_appointments():
             return jsonify({'error': 'Only patients can access this endpoint'}), 403
         
         # Get patient ID from user
-        patient_query = "SELECT id FROM patients WHERE user_id = %s"
-        patient = execute_query(patient_query, (user['id'],), fetch_one=True)
+        patient = execute_query(PATIENT_ID_BY_USER_QUERY, (user['id'],), fetch_one=True)
         
         if not patient:
-            return jsonify({'error': 'Patient record not found'}), 404
+            return jsonify({'error': PATIENT_RECORD_NOT_FOUND_ERROR}), 404
         
         patient_id = patient['id']
         
@@ -149,11 +151,10 @@ def request_appointment():
             return jsonify({'error': 'Missing required fields'}), 400
         
         # Get patient ID from user
-        patient_query = "SELECT id FROM patients WHERE user_id = %s"
-        patient = execute_query(patient_query, (user['id'],), fetch_one=True)
+        patient = execute_query(PATIENT_ID_BY_USER_QUERY, (user['id'],), fetch_one=True)
         
         if not patient:
-            return jsonify({'error': 'Patient record not found'}), 404
+            return jsonify({'error': PATIENT_RECORD_NOT_FOUND_ERROR}), 404
         
         patient_id = patient['id']
         doctor_id = data['doctor_id']
@@ -223,7 +224,7 @@ def confirm_appointment(appointment_id):
         appointment = execute_query(apt_query, (appointment_id, doctor['id']), fetch_one=True)
 
         if not appointment:
-            return jsonify({'error': 'Appointment not found'}), 404
+            return jsonify({'error': APPOINTMENT_NOT_FOUND_ERROR}), 404
 
         if appointment['status'] != 'pending':
             return jsonify({'error': f"Cannot confirm appointment with status '{appointment['status']}'"}), 400
@@ -262,11 +263,10 @@ def checkin_appointment(appointment_id):
             return jsonify({'error': 'Only patients can check in'}), 403
         
         # Get patient ID from user
-        patient_query = "SELECT id FROM patients WHERE user_id = %s"
-        patient = execute_query(patient_query, (user['id'],), fetch_one=True)
+        patient = execute_query(PATIENT_ID_BY_USER_QUERY, (user['id'],), fetch_one=True)
         
         if not patient:
-            return jsonify({'error': 'Patient record not found'}), 404
+            return jsonify({'error': PATIENT_RECORD_NOT_FOUND_ERROR}), 404
         
         patient_id = patient['id']
         
@@ -278,7 +278,7 @@ def checkin_appointment(appointment_id):
         appointment = execute_query(apt_query, (appointment_id, patient_id), fetch_one=True)
         
         if not appointment:
-            return jsonify({'error': 'Appointment not found'}), 404
+            return jsonify({'error': APPOINTMENT_NOT_FOUND_ERROR}), 404
         
         # Check if already checked in
         checkin_query = "SELECT id FROM appointment_checkins WHERE appointment_id = %s"
@@ -355,7 +355,7 @@ def checkin_appointment_guest(appointment_id):
         appointment = execute_query(apt_query, (appointment_id, patient_id), fetch_one=True)
         
         if not appointment:
-            return jsonify({'error': 'Appointment not found'}), 404
+            return jsonify({'error': APPOINTMENT_NOT_FOUND_ERROR}), 404
         
         # Check if already checked in
         checkin_query = "SELECT id FROM appointment_checkins WHERE appointment_id = %s"

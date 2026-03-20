@@ -14,7 +14,7 @@ const tenantId = (import.meta.env.VITE_AZURE_TENANT_ID as string | undefined)?.t
 const configuredRedirectUri = (import.meta.env.VITE_AZURE_REDIRECT_URI as string | undefined)?.trim()
 
 const resolveRedirectUri = (): string => {
-  const runtimeAdminUrl = `${window.location.origin}/admin`
+  const runtimeAdminUrl = `${globalThis.location.origin}/admin`
 
   if (!configuredRedirectUri) {
     return runtimeAdminUrl
@@ -23,7 +23,7 @@ const resolveRedirectUri = (): string => {
   try {
     const parsedUrl = new URL(configuredRedirectUri)
     const configuredIsLocalhost = ['localhost', '127.0.0.1'].includes(parsedUrl.hostname)
-    const runtimeIsLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+    const runtimeIsLocalhost = ['localhost', '127.0.0.1'].includes(globalThis.location.hostname)
 
     if (configuredIsLocalhost && !runtimeIsLocalhost) {
       return runtimeAdminUrl

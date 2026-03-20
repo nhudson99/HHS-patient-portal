@@ -13,6 +13,12 @@ from api.db.connection import execute_query
 from api.middleware.auth import authenticate
 
 documents_bp = Blueprint('documents', __name__, url_prefix='/api/documents')
+INSUFFICIENT_PERMISSIONS_ERROR = 'Insufficient permissions'
+DOCUMENT_NOT_FOUND_ERROR = 'Document not found'
+FAILED_RETRIEVE_DOCUMENTS_ERROR = 'Failed to retrieve documents'
+FAILED_UPLOAD_DOCUMENTS_ERROR = 'Failed to upload documents'
+FAILED_RENAME_DOCUMENT_ERROR = 'Failed to rename document'
+FAILED_DELETE_DOCUMENT_ERROR = 'Failed to delete document'
 
 # Local storage directory (will be S3 in production)
 UPLOAD_DIR = Path.home() / 'hhs-documents'
@@ -69,9 +75,7 @@ def serialize_document(doc):
         return None
     result = dict(doc)
     for key, value in result.items():
-        if isinstance(value, datetime):
-            result[key] = value.isoformat()
-        elif isinstance(value, date):
+        if isinstance(value, (datetime, date)):
             result[key] = value.isoformat()
     return result
 
@@ -91,9 +95,9 @@ def list_documents(patient_id):
             patient_query = "SELECT id FROM patients WHERE user_id = %s"
             patient = execute_query(patient_query, (user['id'],), fetch_one=True)
             if not patient or patient['id'] != patient_id:
-                return jsonify({'error': 'Insufficient permissions'}), 403
+                return jsonify({'error': INSUFFICIENT_PERMISSIONS_ERROR}), 403
         elif user.get('role') != 'doctor':
-            return jsonify({'error': 'Insufficient permissions'}), 403
+            return jsonify({'error': INSUFFICIENT_PERMISSIONS_ERROR}), 403
         
         query = """
             SELECT id, patient_id, doctor_id, document_type, title, description,
@@ -112,7 +116,7 @@ def list_documents(patient_id):
         
     except Exception as e:
         print(f"Documents list error: {e}")
-        return jsonify({'error': 'Failed to retrieve documents'}), 500
+        return jsonify({'error': FAILED_RETRIEVE_DOCUMENTS_ERROR}), 500
 
 
 @documents_bp.route('/<patient_id>', methods=['POST'])
@@ -126,7 +130,7 @@ def upload_document(patient_id):
         user = request.user
         
         if user.get('role') != 'doctor':
-            return jsonify({'error': 'Insufficient permissions'}), 403
+            return jsonify({'error': INSUFFICIENT_PERMISSIONS_ERROR}), 403
         
         # Get doctor ID
         doctor_query = "SELECT id FROM doctors WHERE user_id = %s"
@@ -196,7 +200,7 @@ def upload_document(patient_id):
         
     except Exception as e:
         print(f"Document upload error: {e}")
-        return jsonify({'error': 'Failed to upload documents'}), 500
+        return jsonify({'error': FAILED_UPLOAD_DOCUMENTS_ERROR}), 500
 
 
 @documents_bp.route('/<doc_id>/rename', methods=['PUT'])
@@ -210,7 +214,7 @@ def rename_document(doc_id):
         user = request.user
         
         if user.get('role') != 'doctor':
-            return jsonify({'error': 'Insufficient permissions'}), 403
+            return jsonify({'error': INSUFFICIENT_PERMISSIONS_ERROR}), 403
         
         data = request.get_json()
         new_title = data.get('title', '').strip()
@@ -231,7 +235,7 @@ def rename_document(doc_id):
         doc = execute_query(update_query, (new_title, doc_id), fetch_one=True)
         
         if not doc:
-            return jsonify({'error': 'Document not found'}), 404
+            return jsonify({'error': DOCUMENT_NOT_FOUND_ERROR}), 404
         
         return jsonify({
             'message': 'Document renamed successfully',
@@ -240,7 +244,7 @@ def rename_document(doc_id):
         
     except Exception as e:
         print(f"Document rename error: {e}")
-        return jsonify({'error': 'Failed to rename document'}), 500
+        return jsonify({'error': FAILED_RENAME_DOCUMENT_ERROR}), 500
 
 
 @documents_bp.route('/<doc_id>', methods=['DELETE'])
@@ -254,21 +258,21 @@ def delete_document(doc_id):
         user = request.user
         
         if user.get('role') != 'doctor':
-            return jsonify({'error': 'Insufficient permissions'}), 403
+            return jsonify({'error': INSUFFICIENT_PERMISSIONS_ERROR}), 403
         
         # Get document to find file path
         get_query = "SELECT file_path FROM medical_documents WHERE id = %s"
         doc = execute_query(get_query, (doc_id,), fetch_one=True)
         
         if not doc:
-            return jsonify({'error': 'Document not found'}), 404
+            return jsonify({'error': DOCUMENT_NOT_FOUND_ERROR}), 404
         
         # Delete from database
         delete_query = "DELETE FROM medical_documents WHERE id = %s RETURNING id"
         result = execute_query(delete_query, (doc_id,), fetch_one=True)
         
         if not result:
-            return jsonify({'error': 'Failed to delete document'}), 500
+            return jsonify({'error': FAILED_DELETE_DOCUMENT_ERROR}), 500
         
         # Delete physical file
         if doc.get('file_path'):
@@ -280,7 +284,7 @@ def delete_document(doc_id):
         
     except Exception as e:
         print(f"Document delete error: {e}")
-        return jsonify({'error': 'Failed to delete document'}), 500
+        return jsonify({'error': FAILED_DELETE_DOCUMENT_ERROR}), 500
 
 
 @documents_bp.route('/download/<doc_id>', methods=['GET'])
@@ -298,16 +302,16 @@ def download_document(doc_id):
         doc = execute_query(query, (doc_id,), fetch_one=True)
         
         if not doc:
-            return jsonify({'error': 'Document not found'}), 404
+            return jsonify({'error': DOCUMENT_NOT_FOUND_ERROR}), 404
         
         # Patient can only download their own documents
         if user.get('role') == 'patient':
             patient_query = "SELECT id FROM patients WHERE user_id = %s"
             patient = execute_query(patient_query, (user['id'],), fetch_one=True)
             if not patient or patient['id'] != doc['patient_id']:
-                return jsonify({'error': 'Insufficient permissions'}), 403
+                return jsonify({'error': INSUFFICIENT_PERMISSIONS_ERROR}), 403
         elif user.get('role') != 'doctor':
-            return jsonify({'error': 'Insufficient permissions'}), 403
+            return jsonify({'error': INSUFFICIENT_PERMISSIONS_ERROR}), 403
         
         file_path = Path(doc['file_path'])
         

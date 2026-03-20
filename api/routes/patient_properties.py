@@ -9,6 +9,10 @@ from api.db.connection import execute_query
 from api.middleware.auth import authenticate
 
 patient_properties_bp = Blueprint('patient_properties', __name__, url_prefix='/api/patient-properties')
+INSUFFICIENT_PERMISSIONS_ERROR = 'Insufficient permissions'
+FAILED_RETRIEVE_PROPERTIES_ERROR = 'Failed to retrieve patient properties'
+FAILED_CREATE_PROPERTY_ERROR = 'Failed to create patient property'
+FAILED_DELETE_PROPERTY_ERROR = 'Failed to delete patient property'
 
 
 def serialize_property(prop):
@@ -16,9 +20,7 @@ def serialize_property(prop):
         return None
     result = dict(prop)
     for key, value in result.items():
-        if isinstance(value, datetime):
-            result[key] = value.isoformat()
-        elif isinstance(value, date):
+        if isinstance(value, (datetime, date)):
             result[key] = value.isoformat()
     return result
 
@@ -29,7 +31,7 @@ def list_properties(patient_id):
     try:
         user = request.user
         if user.get('role') != 'doctor':
-            return jsonify({'error': 'Insufficient permissions'}), 403
+            return jsonify({'error': INSUFFICIENT_PERMISSIONS_ERROR}), 403
 
         query = """
             SELECT patient_id, property_id, name, description, created_at, updated_at
@@ -41,7 +43,7 @@ def list_properties(patient_id):
         return jsonify({'properties': [serialize_property(p) for p in props]}), 200
     except Exception as e:
         print(f"Patient properties retrieval error: {e}")
-        return jsonify({'error': 'Failed to retrieve patient properties'}), 500
+        return jsonify({'error': FAILED_RETRIEVE_PROPERTIES_ERROR}), 500
 
 
 @patient_properties_bp.route('/<patient_id>', methods=['POST'])
@@ -50,9 +52,9 @@ def create_property(patient_id):
     try:
         user = request.user
         if user.get('role') != 'doctor':
-            return jsonify({'error': 'Insufficient permissions'}), 403
+            return jsonify({'error': INSUFFICIENT_PERMISSIONS_ERROR}), 403
 
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         name = data.get('name')
         description = data.get('description', '')
 
@@ -76,7 +78,7 @@ def create_property(patient_id):
         return jsonify({'property': serialize_property(created)}), 201
     except Exception as e:
         print(f"Patient property creation error: {e}")
-        return jsonify({'error': 'Failed to create patient property'}), 500
+        return jsonify({'error': FAILED_CREATE_PROPERTY_ERROR}), 500
 
 
 @patient_properties_bp.route('/<patient_id>/<int:property_id>', methods=['DELETE'])
@@ -85,7 +87,7 @@ def delete_property(patient_id, property_id):
     try:
         user = request.user
         if user.get('role') != 'doctor':
-            return jsonify({'error': 'Insufficient permissions'}), 403
+            return jsonify({'error': INSUFFICIENT_PERMISSIONS_ERROR}), 403
 
         delete_query = """
             DELETE FROM patient_properties
@@ -99,4 +101,4 @@ def delete_property(patient_id, property_id):
         return jsonify({'message': 'Property deleted'}), 200
     except Exception as e:
         print(f"Patient property deletion error: {e}")
-        return jsonify({'error': 'Failed to delete patient property'}), 500
+        return jsonify({'error': FAILED_DELETE_PROPERTY_ERROR}), 500

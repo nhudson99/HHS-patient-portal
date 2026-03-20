@@ -24,6 +24,7 @@ from api.utils.audit_log import (
 from api.middleware.auth import authenticate, check_account_lock
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
+BCRYPT_ROUNDS = int(os.getenv('BCRYPT_ROUNDS', 12))
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
@@ -63,7 +64,7 @@ def register():
             return jsonify({'error': 'Username or email already exists'}), 409
         
         # Hash password on backend using bcrypt
-        salt = bcrypt.gensalt(rounds=10)
+        salt = bcrypt.gensalt(rounds=BCRYPT_ROUNDS)
         password_hash = bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
         
         # Store the salt as a string (the full bcrypt salt prefix needed for client-side hashing during login)
@@ -126,7 +127,7 @@ def get_salt():
         user = execute_query(user_query, (username,), fetch_one=True)
         
         if not user or not user.get('salt'):
-            dummy_salt = bcrypt.gensalt(rounds=10).decode('utf-8')
+            dummy_salt = bcrypt.gensalt(rounds=BCRYPT_ROUNDS).decode('utf-8')
             return jsonify({'salt': dummy_salt}), 200
 
         return jsonify({'salt': user['salt']}), 200
@@ -311,7 +312,7 @@ def change_password():
             return jsonify({'error': 'Current password is incorrect'}), 401
         
         # Hash new password on backend
-        new_salt = bcrypt.gensalt(rounds=10)
+        new_salt = bcrypt.gensalt(rounds=BCRYPT_ROUNDS)
         new_password_hash = bcrypt.hashpw(new_password.encode('utf-8'), new_salt).decode('utf-8')
         new_salt_str = new_password_hash[:29]
         

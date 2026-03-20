@@ -639,7 +639,7 @@ input:focus {
 
 .status-badge.pending {
   background: #fff3e0;
-  color: #f57c00;
+  color: #9a5a00;
 }
 
 .status-badge.confirmed {

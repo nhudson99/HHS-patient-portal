@@ -35,7 +35,7 @@ async function request<T>(
     }
     
     const abortController = new AbortController();
-    const timeoutId = window.setTimeout(() => abortController.abort(), API_REQUEST_TIMEOUT_MS);
+    const timeoutId = globalThis.setTimeout(() => abortController.abort(), API_REQUEST_TIMEOUT_MS);
 
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
@@ -43,7 +43,7 @@ async function request<T>(
       signal: abortController.signal,
     });
 
-    window.clearTimeout(timeoutId);
+    globalThis.clearTimeout(timeoutId);
 
     let data: any = null;
     const contentType = response.headers.get('content-type') || '';
