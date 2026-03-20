@@ -83,6 +83,33 @@ After deploy, add this redirect URI to your Azure app registration (SPA platform
 
 - `https://<WEB_FQDN>/admin`
 
+## Azure deploy on `main` push
+
+This repo now includes `.github/workflows/deploy-main.yml`, which runs `azure-deploy.sh` automatically on every push to `main` and also supports manual runs via GitHub Actions.
+
+### Required GitHub Actions secret
+
+- `AZURE_CREDENTIALS`: service principal JSON for `azure/login`
+- `AZ_SUBSCRIPTION_ID`: Azure subscription to target
+- `DB_HOST`, `DB_USER`, `DB_PASSWORD`
+- `SESSION_SECRET`, `JWT_SECRET`
+- `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`
+- `REDIS_URL` (optional, if used)
+- `DEPLOY_GITHUB_TOKEN` (optional, if doctor feature requests should post to GitHub)
+
+### Recommended GitHub Actions variables
+
+- `DB_NAME`
+- `ALLOWED_ORIGINS`
+- `VITE_AZURE_REDIRECT_URI`
+- `AZ_LOCATION`, `AZ_RESOURCE_GROUP`, `AZ_CONTAINERAPPS_ENV`, `AZ_API_APP_NAME`, `AZ_ACR_NAME`
+- `DB_PORT`, `DB_SSLMODE`, `FORCE_HTTPS`
+- `MAX_LOGIN_ATTEMPTS`, `ACCOUNT_LOCKOUT_MINUTES`, `SESSION_TIMEOUT_MINUTES`
+- `GUNICORN_WORKERS`, `GUNICORN_THREADS`, `GUNICORN_TIMEOUT`
+- `GITHUB_REPO`, `GITHUB_FEATURE_REQUEST_LABELS`, `APP_DOMAIN`
+
+The workflow builds the frontend, runs backend tests, logs into Azure, writes a temporary env file for `azure-deploy.sh`, then deploys the app when `main` receives a push.
+
 ## Unit tests (frontend + backend)
 
 Install backend test dependencies:

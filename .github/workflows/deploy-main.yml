@@ -1,0 +1,99 @@
+name: Deploy to Azure on Main
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: azure-deploy-main
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-dev.txt
+
+      - name: Run backend tests
+        run: python -m pytest api/tests -q
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Write deploy env file
+        run: |
+          cat > .env.github-actions <<EOF
+          DB_HOST=${{ secrets.DB_HOST }}
+          DB_PORT=${{ vars.DB_PORT || '5432' }}
+          DB_NAME=${{ vars.DB_NAME }}
+          DB_USER=${{ secrets.DB_USER }}
+          DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+          DB_SSLMODE=${{ vars.DB_SSLMODE || 'require' }}
+          SESSION_SECRET=${{ secrets.SESSION_SECRET }}
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          ALLOWED_ORIGINS=${{ vars.ALLOWED_ORIGINS }}
+          AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}
+          VITE_AZURE_REDIRECT_URI=${{ vars.VITE_AZURE_REDIRECT_URI }}
+          FORCE_HTTPS=${{ vars.FORCE_HTTPS || 'true' }}
+          REDIS_URL=${{ secrets.REDIS_URL }}
+          GITHUB_TOKEN=${{ secrets.DEPLOY_GITHUB_TOKEN }}
+          GITHUB_REPO=${{ vars.GITHUB_REPO || 'nhudson99/HHS-patient-portal' }}
+          GITHUB_FEATURE_REQUEST_LABELS=${{ vars.GITHUB_FEATURE_REQUEST_LABELS || 'feature-request' }}
+          MAX_LOGIN_ATTEMPTS=${{ vars.MAX_LOGIN_ATTEMPTS || '5' }}
+          ACCOUNT_LOCKOUT_MINUTES=${{ vars.ACCOUNT_LOCKOUT_MINUTES || '30' }}
+          SESSION_TIMEOUT_MINUTES=${{ vars.SESSION_TIMEOUT_MINUTES || '15' }}
+          GUNICORN_WORKERS=${{ vars.GUNICORN_WORKERS || '1' }}
+          GUNICORN_THREADS=${{ vars.GUNICORN_THREADS || '2' }}
+          GUNICORN_TIMEOUT=${{ vars.GUNICORN_TIMEOUT || '180' }}
+          EOF
+
+      - name: Run Azure deploy
+        env:
+          ENV_FILE: ${{ github.workspace }}/.env.github-actions
+          IMAGE_TAG: ${{ github.sha }}
+          AZ_SUBSCRIPTION_ID: ${{ secrets.AZ_SUBSCRIPTION_ID }}
+          AZ_LOCATION: ${{ vars.AZ_LOCATION || 'eastus' }}
+          AZ_RESOURCE_GROUP: ${{ vars.AZ_RESOURCE_GROUP || 'hhs-prod-rg' }}
+          AZ_CONTAINERAPPS_ENV: ${{ vars.AZ_CONTAINERAPPS_ENV || 'hhs-prod-env' }}
+          AZ_API_APP_NAME: ${{ vars.AZ_API_APP_NAME || 'hhs-api' }}
+          AZ_ACR_NAME: ${{ vars.AZ_ACR_NAME || 'hhsprodreg' }}
+          APP_DOMAIN: ${{ vars.APP_DOMAIN }}
+        run: bash ./azure-deploy.sh
+
+      - name: Cleanup temporary env file
+        if: always()
+        run: rm -f .env.github-actions
