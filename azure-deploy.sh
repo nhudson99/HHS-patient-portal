@@ -125,6 +125,12 @@ if [[ -z "${DB_PASSWORD:-}" || "${DB_PASSWORD:-}" == "postgres" ]]; then
   UPDATE_DB_PASSWORD_SECRET=false
 fi
 
+GITHUB_TOKEN_SECRET_VALUE="${GITHUB_TOKEN:-}"
+if [[ -z "$GITHUB_TOKEN_SECRET_VALUE" ]]; then
+  echo "ℹ️ GITHUB_TOKEN is not set; using disabled placeholder for github-token secret."
+  GITHUB_TOKEN_SECRET_VALUE="disabled"
+fi
+
 echo "🔐 Authenticating Docker with ACR..."
 az acr login --name "$AZ_ACR_NAME" >/dev/null
 
@@ -156,7 +162,7 @@ if [[ "$APP_EXISTS" != "true" ]]; then
       db-password="$DB_PASSWORD" \
       session-secret="$SESSION_SECRET" \
       jwt-secret="$JWT_SECRET" \
-      github-token="${GITHUB_TOKEN:-}" \
+      github-token="$GITHUB_TOKEN_SECRET_VALUE" \
     --env-vars \
       FLASK_ENV=production \
       NODE_ENV=production \
@@ -223,7 +229,7 @@ else
         db-password="$DB_PASSWORD" \
         session-secret="$SESSION_SECRET" \
         jwt-secret="$JWT_SECRET" \
-        github-token="${GITHUB_TOKEN:-}" >/dev/null
+        github-token="$GITHUB_TOKEN_SECRET_VALUE" >/dev/null
   else
     az containerapp secret set \
       --name "$AZ_API_APP_NAME" \
@@ -231,7 +237,7 @@ else
       --secrets \
         session-secret="$SESSION_SECRET" \
         jwt-secret="$JWT_SECRET" \
-        github-token="${GITHUB_TOKEN:-}" >/dev/null
+        github-token="$GITHUB_TOKEN_SECRET_VALUE" >/dev/null
   fi
 
   az containerapp update \
