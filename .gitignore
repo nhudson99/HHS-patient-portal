@@ -19,3 +19,4 @@ ENV/
 
 # TypeScript server (legacy)
 server/
+coverage/

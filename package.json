@@ -13,7 +13,16 @@
     "server:ts": "tsx watch server/index.ts",
     "server:build": "tsc -p tsconfig.server.json",
     "server:start": "node dist/server/index.js",
-    "test": "vitest --ui"
+    "test": "vitest run",
+    "test:ui": "vitest --ui",
+    "test:frontend": "vitest run --coverage",
+    "test:backend": "./venv/bin/python -m pytest api/tests -q --cov=api --cov-report=term --cov-report=xml:coverage-python.xml",
+    "test:unit": "npm run test:frontend && npm run test:backend",
+    "sonar:scan": "bash ./scripts/sonarqube-run-scan.sh",
+    "sonar:up": "bash ./scripts/sonarqube-up.sh",
+    "sonar:down": "bash ./scripts/sonarqube-down.sh",
+    "sonar:status": "bash ./scripts/sonarqube-status.sh",
+    "sonar:full": "bash ./scripts/sonarqube-scan.sh"
   },
   "repository": {
     "type": "git",
@@ -51,6 +60,7 @@
     "@types/express-session": "^1.18.2",
     "@types/pg": "^8.16.0",
     "@vitejs/plugin-vue": "^6.0.4",
+    "@vitest/coverage-v8": "^4.0.18",
     "@vitest/ui": "^4.0.18",
     "@vue/test-utils": "^2.4.6",
     "jsdom": "^28.1.0",

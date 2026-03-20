@@ -83,3 +83,104 @@ After deploy, add this redirect URI to your Azure app registration (SPA platform
 
 - `https://<WEB_FQDN>/admin`
 
+## Unit tests (frontend + backend)
+
+Install backend test dependencies:
+
+```bash
+python3 -m pip install -r requirements-dev.txt
+```
+
+Run unit tests with coverage:
+
+```bash
+npm run test:frontend
+npm run test:backend
+```
+
+Or run both:
+
+```bash
+npm run test:unit
+```
+
+Coverage outputs:
+
+- Frontend LCOV: `coverage/lcov.info`
+- Backend coverage XML: `coverage-python.xml`
+
+## SonarQube setup
+
+This repo includes `sonar-project.properties` configured for `src/` + `api/` and both coverage reports.
+
+### Local SonarQube host (recommended for setup)
+
+This repo includes a local SonarQube + PostgreSQL stack:
+
+```bash
+cp .env.sonarqube.example .env.sonarqube
+npm run sonar:up
+npm run sonar:status
+```
+
+Open SonarQube at:
+
+- `http://localhost:9000`
+
+Default login:
+
+- username: `admin`
+- password: `admin`
+
+On first login, SonarQube will ask you to change the admin password.
+
+Stop the stack with:
+
+```bash
+npm run sonar:down
+```
+
+1) Ensure tests have been run to generate coverage files.
+2) Configure scanner auth in your shell.
+3) Run sonar scan.
+
+`npm run sonar:scan` now uses a wrapper script that automatically tries:
+
+- local `sonar-scanner` binary,
+- Docker scanner image fallback.
+
+You do not need a global scanner installation.
+
+```bash
+export SONAR_HOST_URL="https://<your-sonarqube-host>"
+export SONAR_TOKEN="<your-token>"
+npm run sonar:scan
+```
+
+To run the full local flow in one command after setting the token:
+
+```bash
+export SONAR_HOST_URL="http://localhost:9000"
+export SONAR_TOKEN="<your-token>"
+npm run sonar:full
+```
+
+If your SonarQube uses self-signed certs or custom scanner options, pass them via your scanner environment/CLI as needed.
+
+### Final manual steps in SonarQube UI
+
+After `npm run sonar:up`, complete these once:
+
+1. Sign in to `http://localhost:9000`.
+2. Change the default admin password.
+3. Create or confirm the project key `hhs-patient-portal`.
+4. Generate a user token.
+5. Export `SONAR_HOST_URL` and `SONAR_TOKEN` in your terminal.
+
+### GitHub Actions integration
+
+`/.github/workflows/quality.yml` runs frontend + backend unit tests and performs SonarQube scan when these repository secrets are configured:
+
+- `SONAR_HOST_URL`
+- `SONAR_TOKEN`
+
