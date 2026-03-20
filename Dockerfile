@@ -46,7 +46,6 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
 
 # Copy backend code
 COPY api/ ./api/
-COPY server/ ./server/
 
 # Copy built frontend from stage 1
 COPY --from=frontend-builder /app/dist ./dist
