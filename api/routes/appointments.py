@@ -3,15 +3,34 @@ Appointments routes for patient appointment requests and management
 Handles appointment requests, confirmations, and check-ins
 """
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from datetime import datetime, date, time
 from api.db.connection import execute_query
 from api.middleware.auth import authenticate
+from api.utils.notifications import send_unregistered_checkin_alert
 
 appointments_bp = Blueprint('appointments', __name__, url_prefix='/api/appointments')
 APPOINTMENT_NOT_FOUND_ERROR = 'Appointment not found'
 PATIENT_ID_BY_USER_QUERY = "SELECT id FROM patients WHERE user_id = %s"
 PATIENT_RECORD_NOT_FOUND_ERROR = 'Patient record not found'
+
+
+def _normalize_appointment_time(raw_time: str) -> str:
+    value = (raw_time or '').strip()
+    if not value:
+        return ''
+    if len(value) >= 5:
+        return value[:5]
+    return value
+
+
+def _alert_unregistered_checkin(patient_name: str, appointment_time: str, note: str) -> None:
+    send_unregistered_checkin_alert(
+        patient_name=patient_name,
+        appointment_time=appointment_time or 'not provided',
+        note=note,
+        logger=current_app.logger,
+    )
 
 
 def serialize_appointment(apt):
@@ -37,12 +56,13 @@ def kiosk_lookup():
     Used by the front-desk tablet kiosk.
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         if not data or not data.get('patient_name') or not data.get('date_of_birth'):
             return jsonify({'error': 'Full name and date of birth are required'}), 400
 
         patient_name = data['patient_name'].strip()
         dob = data['date_of_birth']
+        appointment_time = _normalize_appointment_time(data.get('appointment_time', ''))
 
         # Match patient by full name + DOB (case-insensitive)
         patient_query = """
@@ -57,6 +77,11 @@ def kiosk_lookup():
         patient = execute_query(patient_query, (patient_name, dob), fetch_one=True)
 
         if not patient:
+            _alert_unregistered_checkin(
+                patient_name=patient_name,
+                appointment_time=appointment_time,
+                note='No patient record matched kiosk lookup input',
+            )
             return jsonify({'error': 'No patient found with that name and date of birth'}), 404
 
         # Find their next upcoming appointment
@@ -72,18 +97,24 @@ def kiosk_lookup():
             WHERE a.patient_id = %s
               AND a.appointment_date >= CURRENT_DATE
               AND a.status NOT IN ('cancelled', 'completed')
+              AND (%s = '' OR TO_CHAR(a.appointment_date, 'HH24:MI') = %s)
             ORDER BY a.appointment_date ASC
             LIMIT 1
         """
-        appointment = execute_query(apt_query, (patient['id'],), fetch_one=True)
+        appointment = execute_query(apt_query, (patient['id'], appointment_time, appointment_time), fetch_one=True)
 
         if not appointment:
+            _alert_unregistered_checkin(
+                patient_name=patient_name,
+                appointment_time=appointment_time,
+                note='No appointment matched kiosk lookup criteria',
+            )
             return jsonify({'error': 'No upcoming appointments found'}), 404
 
         return jsonify({'appointment': serialize_appointment(appointment)}), 200
 
-    except Exception as e:
-        print(f'Kiosk lookup error: {e}')
+    except Exception:
+        current_app.logger.exception('Kiosk lookup error')
         return jsonify({'error': 'Lookup failed'}), 500
 
 
@@ -125,8 +156,8 @@ def get_patient_appointments():
             'appointments': [serialize_appointment(apt) for apt in (appointments or [])]
         }), 200
         
-    except Exception as e:
-        print(f"Get patient appointments error: {e}")
+    except Exception:
+        current_app.logger.exception('Get patient appointments error')
         return jsonify({'error': 'Failed to retrieve appointments'}), 500
 
 
@@ -139,39 +170,25 @@ def request_appointment():
     """
     try:
         user = request.user
-        
+
         if user.get('role') != 'patient':
             return jsonify({'error': 'Only patients can request appointments'}), 403
-        
-        data = request.get_json()
-        
-        # Validate required fields
+
+        data = request.get_json(silent=True) or {}
+
         required = ['doctor_id', 'appointment_date', 'appointment_time', 'reason']
         if not all(field in data for field in required):
             return jsonify({'error': 'Missing required fields'}), 400
-        
-        # Get patient ID from user
+
         patient = execute_query(PATIENT_ID_BY_USER_QUERY, (user['id'],), fetch_one=True)
-        
         if not patient:
             return jsonify({'error': PATIENT_RECORD_NOT_FOUND_ERROR}), 404
-        
-        patient_id = patient['id']
+
         doctor_id = data['doctor_id']
-        
-        # Verify doctor exists
-        doctor_query = "SELECT id FROM doctors WHERE id = %s"
-        doctor = execute_query(doctor_query, (doctor_id,), fetch_one=True)
-        
+        doctor = execute_query("SELECT id FROM doctors WHERE id = %s", (doctor_id,), fetch_one=True)
         if not doctor:
             return jsonify({'error': 'Doctor not found'}), 404
-        
-        # Combine date and time into appointment_date
-        appointment_date = data['appointment_date']
-        appointment_time = data['appointment_time']
-        reason = data['reason']
-        
-        # Insert appointment with status 'pending'
+
         insert_query = """
             INSERT INTO appointments
             (patient_id, doctor_id, appointment_date, reason, status)
@@ -179,20 +196,26 @@ def request_appointment():
             RETURNING id, patient_id, doctor_id, appointment_date, reason, status,
                       created_at, updated_at
         """
-        
+
         appointment = execute_query(
             insert_query,
-            (patient_id, doctor_id, appointment_date, appointment_time, reason),
-            fetch_one=True
+            (
+                patient['id'],
+                doctor_id,
+                data['appointment_date'],
+                data['appointment_time'],
+                data['reason'],
+            ),
+            fetch_one=True,
         )
-        
+
         return jsonify({
             'message': 'Appointment request submitted successfully',
             'appointment': serialize_appointment(appointment)
         }), 201
-        
-    except Exception as e:
-        print(f"Appointment request error: {e}")
+
+    except Exception:
+        current_app.logger.exception('Appointment request error')
         return jsonify({'error': 'Failed to request appointment'}), 500
 
 
@@ -244,8 +267,8 @@ def confirm_appointment(appointment_id):
             'appointment': serialize_appointment(updated)
         }), 200
 
-    except Exception as e:
-        print(f"Appointment confirm error: {e}")
+    except Exception:
+        current_app.logger.exception('Appointment confirm error')
         return jsonify({'error': 'Failed to confirm appointment'}), 500
 
 
@@ -306,8 +329,8 @@ def checkin_appointment(appointment_id):
             'checkin': serialize_appointment(checkin)
         }), 201
         
-    except Exception as e:
-        print(f"Check-in error: {e}")
+    except Exception:
+        current_app.logger.exception('Check-in error')
         return jsonify({'error': 'Failed to check in'}), 500
 
 
@@ -319,15 +342,16 @@ def checkin_appointment_guest(appointment_id):
     No authentication required
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         
         # Validate required fields
         required = ['patient_name', 'date_of_birth']
         if not all(field in data for field in required):
             return jsonify({'error': 'Missing required fields'}), 400
         
-        patient_name = data['patient_name']
+        patient_name = data['patient_name'].strip()
         dob = data['date_of_birth']
+        appointment_time = _normalize_appointment_time(data.get('appointment_time', ''))
         
         # Find patient by name and DOB
         patient_query = """
@@ -343,6 +367,11 @@ def checkin_appointment_guest(appointment_id):
         )
         
         if not patient:
+            _alert_unregistered_checkin(
+                patient_name=patient_name,
+                appointment_time=appointment_time,
+                note='Guest check-in could not find patient',
+            )
             return jsonify({'error': 'Patient not found'}), 404
         
         patient_id = patient['id']
@@ -355,6 +384,11 @@ def checkin_appointment_guest(appointment_id):
         appointment = execute_query(apt_query, (appointment_id, patient_id), fetch_one=True)
         
         if not appointment:
+            _alert_unregistered_checkin(
+                patient_name=patient_name,
+                appointment_time=appointment_time,
+                note='Guest check-in could not match appointment id to patient',
+            )
             return jsonify({'error': APPOINTMENT_NOT_FOUND_ERROR}), 404
         
         # Check if already checked in
@@ -383,6 +417,6 @@ def checkin_appointment_guest(appointment_id):
             'checkin': serialize_appointment(checkin)
         }), 201
         
-    except Exception as e:
-        print(f"Guest check-in error: {e}")
+    except Exception:
+        current_app.logger.exception('Guest check-in error')
         return jsonify({'error': 'Failed to check in'}), 500

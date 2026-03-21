@@ -97,6 +97,17 @@ jobs:
           GITHUB_TOKEN=${{ secrets.DEPLOY_GITHUB_TOKEN }}
           GITHUB_REPO=${{ vars.GITHUB_REPO || 'nhudson99/HHS-patient-portal' }}
           GITHUB_FEATURE_REQUEST_LABELS=${{ vars.GITHUB_FEATURE_REQUEST_LABELS || 'feature-request' }}
+          CHECKIN_ALERT_EMAIL=${{ vars.CHECKIN_ALERT_EMAIL || 'nathan@hudsonitconsulting.com' }}
+          GRAPH_TENANT_ID=${{ secrets.GRAPH_TENANT_ID || secrets.AZURE_TENANT_ID }}
+          GRAPH_CLIENT_ID=${{ secrets.GRAPH_CLIENT_ID || secrets.AZURE_CLIENT_ID }}
+          GRAPH_CLIENT_SECRET=${{ secrets.GRAPH_CLIENT_SECRET }}
+          GRAPH_SENDER_USER=${{ vars.GRAPH_SENDER_USER }}
+          SMTP_HOST=${{ vars.SMTP_HOST }}
+          SMTP_PORT=${{ vars.SMTP_PORT || '587' }}
+          SMTP_USERNAME=${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM_EMAIL=${{ vars.SMTP_FROM_EMAIL }}
+          SMTP_USE_TLS=${{ vars.SMTP_USE_TLS || 'true' }}
           MAX_LOGIN_ATTEMPTS=${{ vars.MAX_LOGIN_ATTEMPTS || '5' }}
           ACCOUNT_LOCKOUT_MINUTES=${{ vars.ACCOUNT_LOCKOUT_MINUTES || '30' }}
           SESSION_TIMEOUT_MINUTES=${{ vars.SESSION_TIMEOUT_MINUTES || '15' }}

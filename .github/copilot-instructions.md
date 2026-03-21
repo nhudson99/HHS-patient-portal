@@ -89,6 +89,15 @@ npm run build
 python3 -m compileall api
 ```
 
+SonarQube for IDE process (required when files are modified):
+
+1. Run Sonar analysis on each changed source file using IDE Sonar tooling.
+2. Review Security Hotspots / Taint issues first, then reliability/maintainability issues.
+3. Fix all issues introduced by the current change.
+4. Also fix at least 5 additional pre-existing Sonar issues in touched areas when feasible and safe.
+5. Re-run Sonar analysis on edited files to confirm issue count decreases and no new issues remain for changed code.
+6. If Sonar tooling is unavailable or fails in the environment, explicitly report that blocker and continue with best-effort static checks (`npm run build`, `python3 -m compileall api`, and targeted lint/error checks).
+
 If DB schema changes are made, include or update an idempotent SQL migration file under `server/db/` and document how to apply it.
 
 ## Change Management
@@ -108,3 +117,8 @@ If DB schema changes are made, include or update an idempotent SQL migration fil
 - Do not add demo credentials in production-facing UI.
 - Do not bypass auth checks for convenience.
 - Do not weaken password/session/security controls without explicit approval.
+
+## Technical Debt
+
+- Prioritize incremental reduction of existing Sonar issues in files being actively modified.
+- Prefer small, safe cleanups that do not change API contracts or security behavior.

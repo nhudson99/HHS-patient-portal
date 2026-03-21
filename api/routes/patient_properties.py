@@ -3,7 +3,7 @@ Patient properties routes
 Supports variable properties per patient (doctor-only)
 """
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from datetime import datetime, date
 from api.db.connection import execute_query
 from api.middleware.auth import authenticate
@@ -41,8 +41,8 @@ def list_properties(patient_id):
         """
         props = execute_query(query, (patient_id,), fetch_all=True) or []
         return jsonify({'properties': [serialize_property(p) for p in props]}), 200
-    except Exception as e:
-        print(f"Patient properties retrieval error: {e}")
+    except Exception:
+        current_app.logger.exception('Patient properties retrieval error')
         return jsonify({'error': FAILED_RETRIEVE_PROPERTIES_ERROR}), 500
 
 
@@ -76,8 +76,8 @@ def create_property(patient_id):
         """
         created = execute_query(insert_query, (patient_id, next_id, name, description), fetch_one=True)
         return jsonify({'property': serialize_property(created)}), 201
-    except Exception as e:
-        print(f"Patient property creation error: {e}")
+    except Exception:
+        current_app.logger.exception('Patient property creation error')
         return jsonify({'error': FAILED_CREATE_PROPERTY_ERROR}), 500
 
 
@@ -99,6 +99,6 @@ def delete_property(patient_id, property_id):
             return jsonify({'error': 'Property not found'}), 404
 
         return jsonify({'message': 'Property deleted'}), 200
-    except Exception as e:
-        print(f"Patient property deletion error: {e}")
+    except Exception:
+        current_app.logger.exception('Patient property deletion error')
         return jsonify({'error': FAILED_DELETE_PROPERTY_ERROR}), 500

@@ -3,7 +3,7 @@ Events routes for doctor calendar
 Handles calendar events, appointments, and doctor scheduling
 """
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from datetime import datetime, date, time
 from api.db.connection import execute_query, DatabaseTransaction
 from api.middleware.auth import authenticate
@@ -124,8 +124,8 @@ def get_events():
             'events': serialized_events
         }), 200
         
-    except Exception as e:
-        print(f"Events retrieval error: {e}")
+    except Exception:
+        current_app.logger.exception('Events retrieval error')
         return jsonify({'error': 'Failed to retrieve events'}), 500
 
 @events_bp.route('', methods=['POST'])
@@ -137,7 +137,7 @@ def create_event():
     """
     try:
         user = request.user
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         
         # Validate required fields
         required = ['title', 'event_date', 'event_type']
@@ -190,8 +190,8 @@ def create_event():
             'event': serialize_event(event)
         }), 201
         
-    except Exception as e:
-        print(f"Event creation error: {e}")
+    except Exception:
+        current_app.logger.exception('Event creation error')
         return jsonify({'error': 'Failed to create event'}), 500
 
 @events_bp.route('/<event_id>', methods=['GET'])
@@ -227,8 +227,8 @@ def get_event(event_id):
         
         return jsonify({'event': serialize_event(event)}), 200
         
-    except Exception as e:
-        print(f"Event retrieval error: {e}")
+    except Exception:
+        current_app.logger.exception('Event retrieval error')
         return jsonify({'error': 'Failed to retrieve event'}), 500
 
 @events_bp.route('/<event_id>', methods=['PUT'])
@@ -240,7 +240,7 @@ def update_event(event_id):
     """
     try:
         user = request.user
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         
         # Get doctor ID
         doctor_query = "SELECT id FROM doctors WHERE user_id = %s"
@@ -289,8 +289,8 @@ def update_event(event_id):
             'event': serialize_event(event)
         }), 200
         
-    except Exception as e:
-        print(f"Event update error: {e}")
+    except Exception:
+        current_app.logger.exception('Event update error')
         return jsonify({'error': 'Failed to update event'}), 500
 
 @events_bp.route('/<event_id>', methods=['DELETE'])
@@ -319,6 +319,6 @@ def delete_event(event_id):
         
         return jsonify({'message': 'Event deleted successfully'}), 200
         
-    except Exception as e:
-        print(f"Event deletion error: {e}")
+    except Exception:
+        current_app.logger.exception('Event deletion error')
         return jsonify({'error': 'Failed to delete event'}), 500
