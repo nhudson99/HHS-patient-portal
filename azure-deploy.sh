@@ -131,6 +131,16 @@ if [[ -z "$GITHUB_TOKEN_SECRET_VALUE" ]]; then
   GITHUB_TOKEN_SECRET_VALUE="disabled"
 fi
 
+SMTP_PASSWORD_SECRET_VALUE="${SMTP_PASSWORD:-}"
+if [[ -z "$SMTP_PASSWORD_SECRET_VALUE" ]]; then
+  SMTP_PASSWORD_SECRET_VALUE="disabled"
+fi
+
+GRAPH_CLIENT_SECRET_VALUE="${GRAPH_CLIENT_SECRET:-}"
+if [[ -z "$GRAPH_CLIENT_SECRET_VALUE" ]]; then
+  GRAPH_CLIENT_SECRET_VALUE="disabled"
+fi
+
 echo "🔐 Authenticating Docker with ACR..."
 az acr login --name "$AZ_ACR_NAME" >/dev/null
 
@@ -162,6 +172,8 @@ if [[ "$APP_EXISTS" != "true" ]]; then
       db-password="$DB_PASSWORD" \
       session-secret="$SESSION_SECRET" \
       jwt-secret="$JWT_SECRET" \
+      graph-client-secret="$GRAPH_CLIENT_SECRET_VALUE" \
+      smtp-password="$SMTP_PASSWORD_SECRET_VALUE" \
       github-token="$GITHUB_TOKEN_SECRET_VALUE" \
     --env-vars \
       FLASK_ENV=production \
@@ -188,6 +200,17 @@ if [[ "$APP_EXISTS" != "true" ]]; then
       SESSION_TIMEOUT_MINUTES="${SESSION_TIMEOUT_MINUTES:-15}" \
       GITHUB_REPO="${GITHUB_REPO:-}" \
       GITHUB_FEATURE_REQUEST_LABELS="${GITHUB_FEATURE_REQUEST_LABELS:-feature-request}" \
+      CHECKIN_ALERT_EMAIL="${CHECKIN_ALERT_EMAIL:-nathan@hudsonitconsulting.com}" \
+      GRAPH_TENANT_ID="${GRAPH_TENANT_ID:-$AZURE_TENANT_ID}" \
+      GRAPH_CLIENT_ID="${GRAPH_CLIENT_ID:-$AZURE_CLIENT_ID}" \
+      GRAPH_SENDER_USER="${GRAPH_SENDER_USER:-}" \
+      GRAPH_CLIENT_SECRET=secretref:graph-client-secret \
+      SMTP_HOST="${SMTP_HOST:-}" \
+      SMTP_PORT="${SMTP_PORT:-587}" \
+      SMTP_USERNAME="${SMTP_USERNAME:-}" \
+      SMTP_FROM_EMAIL="${SMTP_FROM_EMAIL:-}" \
+      SMTP_USE_TLS="${SMTP_USE_TLS:-true}" \
+      SMTP_PASSWORD=secretref:smtp-password \
       GITHUB_TOKEN=secretref:github-token \
       AZURE_TENANT_ID="$AZURE_TENANT_ID" \
       AZURE_CLIENT_ID="$AZURE_CLIENT_ID" >/dev/null
@@ -218,6 +241,15 @@ else
       SESSION_TIMEOUT_MINUTES="${SESSION_TIMEOUT_MINUTES:-15}" \
       GITHUB_REPO="${GITHUB_REPO:-}" \
       GITHUB_FEATURE_REQUEST_LABELS="${GITHUB_FEATURE_REQUEST_LABELS:-feature-request}" \
+      CHECKIN_ALERT_EMAIL="${CHECKIN_ALERT_EMAIL:-nathan@hudsonitconsulting.com}" \
+      GRAPH_TENANT_ID="${GRAPH_TENANT_ID:-$AZURE_TENANT_ID}" \
+      GRAPH_CLIENT_ID="${GRAPH_CLIENT_ID:-$AZURE_CLIENT_ID}" \
+      GRAPH_SENDER_USER="${GRAPH_SENDER_USER:-}" \
+      SMTP_HOST="${SMTP_HOST:-}" \
+      SMTP_PORT="${SMTP_PORT:-587}" \
+      SMTP_USERNAME="${SMTP_USERNAME:-}" \
+      SMTP_FROM_EMAIL="${SMTP_FROM_EMAIL:-}" \
+      SMTP_USE_TLS="${SMTP_USE_TLS:-true}" \
       AZURE_TENANT_ID="$AZURE_TENANT_ID" \
       AZURE_CLIENT_ID="$AZURE_CLIENT_ID" >/dev/null
 
@@ -229,6 +261,8 @@ else
         db-password="$DB_PASSWORD" \
         session-secret="$SESSION_SECRET" \
         jwt-secret="$JWT_SECRET" \
+          graph-client-secret="$GRAPH_CLIENT_SECRET_VALUE" \
+        smtp-password="$SMTP_PASSWORD_SECRET_VALUE" \
         github-token="$GITHUB_TOKEN_SECRET_VALUE" >/dev/null
   else
     az containerapp secret set \
@@ -237,6 +271,8 @@ else
       --secrets \
         session-secret="$SESSION_SECRET" \
         jwt-secret="$JWT_SECRET" \
+          graph-client-secret="$GRAPH_CLIENT_SECRET_VALUE" \
+        smtp-password="$SMTP_PASSWORD_SECRET_VALUE" \
         github-token="$GITHUB_TOKEN_SECRET_VALUE" >/dev/null
   fi
 
@@ -247,6 +283,8 @@ else
       DB_PASSWORD=secretref:db-password \
       SESSION_SECRET=secretref:session-secret \
       JWT_SECRET=secretref:jwt-secret \
+      GRAPH_CLIENT_SECRET=secretref:graph-client-secret \
+      SMTP_PASSWORD=secretref:smtp-password \
       GITHUB_TOKEN=secretref:github-token >/dev/null
 fi
 

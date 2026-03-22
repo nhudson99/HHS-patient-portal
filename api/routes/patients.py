@@ -3,7 +3,7 @@ Patients routes for HHS Patient Portal
 Provides read access to patient records for doctors
 """
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from datetime import date, datetime
 from api.db.connection import execute_query
 from api.middleware.auth import authenticate
@@ -51,8 +51,8 @@ def list_doctors():
         doctors = execute_query(query, fetch_all=True) or []
         return jsonify({'doctors': [serialize_doctor(d) for d in doctors]}), 200
 
-    except Exception as e:
-        print(f"Doctors retrieval error: {e}")
+    except Exception:
+        current_app.logger.exception('Doctors retrieval error')
         return jsonify({'error': 'Failed to retrieve doctors'}), 500
 
 
@@ -81,8 +81,8 @@ def get_my_patient_record():
 
         return jsonify({'patient': serialize_patient(patient)}), 200
 
-    except Exception as e:
-        print(f"Patient self-lookup error: {e}")
+    except Exception:
+        current_app.logger.exception('Patient self-lookup error')
         return jsonify({'error': 'Failed to retrieve patient record'}), 500
 
 
@@ -106,6 +106,6 @@ def list_patients():
         patients = execute_query(query, fetch_all=True) or []
         return jsonify({'patients': [serialize_patient(p) for p in patients]}), 200
 
-    except Exception as e:
-        print(f"Patients retrieval error: {e}")
+    except Exception:
+        current_app.logger.exception('Patients retrieval error')
         return jsonify({'error': 'Failed to retrieve patients'}), 500

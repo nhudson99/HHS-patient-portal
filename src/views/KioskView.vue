@@ -41,7 +41,14 @@
           />
         </div>
 
-        <div v-if="errorMsg" class="kiosk-error">{{ errorMsg }}</div>
+        <div class="form-group">
+          <label for="appointmentTime">Appointment Time (optional)</label>
+          <input
+            id="appointmentTime"
+            v-model="form.appointmentTime"
+            type="time"
+          />
+        </div>
 
         <button type="submit" class="kiosk-btn primary" :disabled="loading">
           {{ loading ? 'Looking up your appointment…' : 'Check In' }}
@@ -76,7 +83,10 @@
         </div>
       </div>
 
-      <p class="kiosk-instruction">Please have a seat — a staff member will be with you shortly.</p>
+      <p class="kiosk-instruction">
+        <template v-if="appointmentInfo">Please have a seat — a staff member will be with you shortly.</template>
+        <template v-else>We couldn't find your appointment on file. A staff member has been notified and will be with you shortly.</template>
+      </p>
 
       <button class="kiosk-btn primary big" @click="reset">Done</button>
 
@@ -101,11 +111,10 @@ type Screen = 'welcome' | 'form' | 'success'
 
 const screen = ref<Screen>('welcome')
 const loading = ref(false)
-const errorMsg = ref('')
 const appointmentInfo = ref<any>(null)
 const checkedInName = ref('')
 
-const form = ref({ fullName: '', dob: '' })
+const form = ref({ fullName: '', dob: '', appointmentTime: '' })
 
 // ── Countdown (success screen only) ──────────────────────────────────────────
 const RESET_AFTER_SECS = 10
@@ -149,8 +158,7 @@ function reset() {
   stopCountdown()
   clearInactivityTimer()
   screen.value = 'welcome'
-  form.value = { fullName: '', dob: '' }
-  errorMsg.value = ''
+  form.value = { fullName: '', dob: '', appointmentTime: '' }
   appointmentInfo.value = null
   checkedInName.value = ''
   loading.value = false
@@ -158,8 +166,9 @@ function reset() {
 
 // ── API: look up appointment then check in ────────────────────────────────────
 async function handleCheckIn() {
-  errorMsg.value = ''
   loading.value = true
+
+  const patientName = form.value.fullName.trim()
 
   try {
     // Step 1: find the patient's next upcoming appointment by name + DOB
@@ -167,14 +176,19 @@ async function handleCheckIn() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        patient_name: form.value.fullName.trim(),
+        patient_name: patientName,
         date_of_birth: form.value.dob,
+        appointment_time: form.value.appointmentTime,
       }),
     })
 
     if (!lookupRes.ok) {
-      const err = await lookupRes.json()
-      errorMsg.value = err.error || 'No upcoming appointment found for that name and date of birth.'
+      // Patient not found — alert already sent server-side; show success anyway
+      checkedInName.value = patientName
+      appointmentInfo.value = null
+      screen.value = 'success'
+      clearInactivityTimer()
+      startCountdown()
       return
     }
 
@@ -185,26 +199,27 @@ async function handleCheckIn() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        patient_name: form.value.fullName.trim(),
+        patient_name: patientName,
         date_of_birth: form.value.dob,
+        appointment_time: form.value.appointmentTime,
       }),
     })
 
-    if (!checkinRes.ok) {
-      const err = await checkinRes.json()
-      errorMsg.value = err.error || 'Unable to complete check-in. Please see the front desk.'
-      return
-    }
-
-    checkedInName.value = form.value.fullName.trim()
-    appointmentInfo.value = appointment
+    checkedInName.value = patientName
+    // Show what we found even if the final checkin call failed
+    appointmentInfo.value = checkinRes.ok ? appointment : null
     screen.value = 'success'
     clearInactivityTimer()
     startCountdown()
 
   } catch (e) {
     console.error('Kiosk check-in error:', e)
-    errorMsg.value = 'A network error occurred. Please try again or see the front desk.'
+    // Network/unexpected error — still send to success to avoid confusing patients
+    checkedInName.value = patientName
+    appointmentInfo.value = null
+    screen.value = 'success'
+    clearInactivityTimer()
+    startCountdown()
   } finally {
     loading.value = false
   }

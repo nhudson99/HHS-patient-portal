@@ -30,9 +30,9 @@ case "${1:-help}" in
 
   # ── Restart API without rebuilding (picks up mounted code changes) ─────────
   reload)
-    echo -e "${BLUE}🔄 Restarting API container (live-mount already applied)...${NC}"
-    $SUDO_CMD docker compose restart api
-    echo -e "${GREEN}✅ API restarted${NC}"
+    echo -e "${BLUE}🔄 Recreating API container (applies .env + mounted code changes)...${NC}"
+    $SUDO_CMD docker compose up -d --force-recreate api
+    echo -e "${GREEN}✅ API recreated${NC}"
     ;;
 
   # ── Rebuild Vue frontend, then reload nginx ────────────────────────────────
@@ -74,7 +74,7 @@ case "${1:-help}" in
     echo -e "${BLUE}Usage: ./dev.sh <command>${NC}"
     echo ""
     echo "  up          Start stack (live Python reload + current dist/)"
-    echo "  reload      Restart API container only (no rebuild)"
+    echo "  reload      Recreate API container only (applies .env changes)"
     echo "  frontend    Rebuild Vue → reload nginx  (for Vue/TS changes)"
     echo "  api         Rebuild API image           (for requirements.txt changes)"
     echo "  rebuild     Full rebuild (frontend + API image)"
@@ -86,6 +86,7 @@ case "${1:-help}" in
     echo "  Python file changed?  →  just save — Flask auto-reloads"
     echo "  Vue file changed?     →  ./dev.sh frontend"
     echo "  Added a pip package?  →  ./dev.sh api"
+    echo "  Changed .env values?  →  ./dev.sh reload"
     echo "  Clean slate?          →  ./dev.sh rebuild"
     ;;
 esac

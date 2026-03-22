@@ -110,6 +110,32 @@ This repo now includes `.github/workflows/deploy-main.yml`, which runs `azure-de
 
 The workflow builds the frontend, runs backend tests, logs into Azure, writes a temporary env file for `azure-deploy.sh`, then deploys the app when `main` receives a push.
 
+## Kiosk unregistered check-in alerts
+
+The kiosk check-in flow now attempts patient + appointment lookup (name, DOB, and optional appointment time). If no matching patient or appointment is found, the API sends an alert email in this format:
+
+- `Unregistered Check-In:`
+- `Patient: <name>`
+- `Appointment time: <time>`
+
+Configure email delivery with these env vars:
+
+- `CHECKIN_ALERT_EMAIL` (defaults to `nathan@hudsonitconsulting.com`)
+
+Recommended (Microsoft Graph API):
+
+- `GRAPH_TENANT_ID`
+- `GRAPH_CLIENT_ID`
+- `GRAPH_CLIENT_SECRET`
+- `GRAPH_SENDER_USER` (licensed mailbox, e.g. `alerts@...` or `nathan@...`)
+
+Fallback (SMTP):
+
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`
+- `SMTP_FROM_EMAIL`, `SMTP_USE_TLS`
+
+If Graph is not configured, the API attempts SMTP fallback. If neither is configured, it logs a warning and continues returning the normal kiosk lookup/check-in response.
+
 ## Unit tests (frontend + backend)
 
 Install backend test dependencies:
