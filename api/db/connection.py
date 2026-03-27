@@ -81,15 +81,15 @@ def execute_query(query, params=None, fetch_one=False, fetch_all=False):
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         
         cursor.execute(query, params)
-        
+
         if fetch_one:
             result = cursor.fetchone()
         elif fetch_all:
             result = cursor.fetchall()
         else:
-            conn.commit()
             result = cursor.rowcount
 
+        conn.commit()
         return result
         
     except Exception as e:
