@@ -3,12 +3,15 @@ Documents routes for patient medical documents
 Handles file upload, download, rename, and delete operations
 """
 
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, request, jsonify, send_file, current_app
 from datetime import datetime, date
+from io import BytesIO
 import os
 import uuid
 from pathlib import Path
 from werkzeug.utils import secure_filename
+from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
+from azure.storage.blob import BlobServiceClient
 from api.db.connection import execute_query
 from api.middleware.auth import authenticate
 
@@ -20,8 +23,12 @@ FAILED_UPLOAD_DOCUMENTS_ERROR = 'Failed to upload documents'
 FAILED_RENAME_DOCUMENT_ERROR = 'Failed to rename document'
 FAILED_DELETE_DOCUMENT_ERROR = 'Failed to delete document'
 
-# Local storage directory (will be S3 in production)
-UPLOAD_DIR = Path.home() / 'hhs-documents'
+DOCUMENTS_STORAGE_BACKEND = (os.getenv('DOCUMENTS_STORAGE_BACKEND') or 'local').strip().lower()
+LOCAL_UPLOAD_DIR = Path((os.getenv('DOCUMENTS_LOCAL_DIR') or str(Path.home() / 'hhs-documents')).strip())
+DOCUMENTS_BLOB_CONTAINER = (os.getenv('DOCUMENTS_BLOB_CONTAINER') or 'hhs-documents').strip()
+DOCUMENTS_BLOB_ENDPOINT = (os.getenv('DOCUMENTS_BLOB_ENDPOINT') or '').strip()
+DOCUMENTS_BLOB_CREDENTIAL = os.getenv('DOCUMENTS_BLOB_CREDENTIAL') or ''
+DOCUMENTS_BLOB_CONNECTION_STRING = (os.getenv('DOCUMENTS_BLOB_CONNECTION_STRING') or '').strip()
 
 # Allowed file extensions
 ALLOWED_EXTENSIONS = {
@@ -51,10 +58,96 @@ DOCUMENT_TYPE_MAP = {
     'json': 'other'
 }
 
+_blob_service_client = None
 
-def ensure_upload_dir():
-    """Create upload directory if it doesn't exist"""
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+def _is_blob_backend() -> bool:
+    return DOCUMENTS_STORAGE_BACKEND in ('azure_blob', 'blob', 'azure')
+
+
+def _get_blob_service_client() -> BlobServiceClient:
+    global _blob_service_client
+    if _blob_service_client is not None:
+        return _blob_service_client
+
+    if DOCUMENTS_BLOB_CONNECTION_STRING:
+        _blob_service_client = BlobServiceClient.from_connection_string(DOCUMENTS_BLOB_CONNECTION_STRING)
+        return _blob_service_client
+
+    if DOCUMENTS_BLOB_ENDPOINT and DOCUMENTS_BLOB_CREDENTIAL:
+        _blob_service_client = BlobServiceClient(
+            account_url=DOCUMENTS_BLOB_ENDPOINT,
+            credential=DOCUMENTS_BLOB_CREDENTIAL,
+        )
+        return _blob_service_client
+
+    raise RuntimeError(
+        'Azure Blob storage backend selected but credentials are incomplete. '
+        'Set DOCUMENTS_BLOB_CONNECTION_STRING or both DOCUMENTS_BLOB_ENDPOINT and DOCUMENTS_BLOB_CREDENTIAL.'
+    )
+
+
+def _get_blob_container_client():
+    service_client = _get_blob_service_client()
+    container_client = service_client.get_container_client(DOCUMENTS_BLOB_CONTAINER)
+    try:
+        container_client.create_container()
+    except ResourceExistsError:
+        pass
+    return container_client
+
+
+def _save_file_to_storage(file, original_name: str) -> tuple[str, int]:
+    unique_name = f"{uuid.uuid4()}_{original_name}"
+
+    if _is_blob_backend():
+        file.stream.seek(0, os.SEEK_END)
+        file_size = file.stream.tell()
+        file.stream.seek(0)
+
+        container_client = _get_blob_container_client()
+        blob_client = container_client.get_blob_client(unique_name)
+        blob_client.upload_blob(file.stream, overwrite=False)
+        return unique_name, file_size
+
+    LOCAL_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    file_path = LOCAL_UPLOAD_DIR / unique_name
+    file.save(str(file_path))
+    return str(file_path), file_path.stat().st_size
+
+
+def _download_file_from_storage(stored_path: str) -> tuple[BytesIO | None, Path | None]:
+    if _is_blob_backend():
+        container_client = _get_blob_container_client()
+        blob_client = container_client.get_blob_client(stored_path)
+        try:
+            payload = blob_client.download_blob().readall()
+            return BytesIO(payload), None
+        except ResourceNotFoundError:
+            return None, None
+
+    local_path = Path(stored_path)
+    if not local_path.exists():
+        return None, None
+    return None, local_path
+
+
+def _delete_file_from_storage(stored_path: str) -> None:
+    if not stored_path:
+        return
+
+    if _is_blob_backend():
+        container_client = _get_blob_container_client()
+        blob_client = container_client.get_blob_client(stored_path)
+        try:
+            blob_client.delete_blob()
+        except ResourceNotFoundError:
+            pass
+        return
+
+    local_path = Path(stored_path)
+    if local_path.exists():
+        local_path.unlink()
 
 
 def get_file_extension(filename):
@@ -113,9 +206,9 @@ def list_documents(patient_id):
         return jsonify({
             'documents': [serialize_document(d) for d in (documents or [])]
         }), 200
-        
-    except Exception as e:
-        print(f"Documents list error: {e}")
+
+    except Exception:
+        current_app.logger.exception('Documents list error')
         return jsonify({'error': FAILED_RETRIEVE_DOCUMENTS_ERROR}), 500
 
 
@@ -144,33 +237,26 @@ def upload_document(patient_id):
         
         if not files or all(f.filename == '' for f in files):
             return jsonify({'error': 'No files selected'}), 400
-        
-        ensure_upload_dir()
-        
+
         uploaded = []
         errors = []
-        
+
         for file in files:
             if file.filename == '':
                 continue
-                
+
             if not allowed_file(file.filename):
                 errors.append(f'{file.filename}: File type not allowed')
                 continue
-            
-            # Secure the filename and generate unique storage name
+
+            # Secure filename and persist to selected backend.
             original_name = secure_filename(file.filename)
             file_ext = get_file_extension(original_name)
-            unique_name = f"{uuid.uuid4()}_{original_name}"
-            file_path = UPLOAD_DIR / unique_name
-            
-            # Save file
-            file.save(str(file_path))
-            file_size = file_path.stat().st_size
-            
+            stored_path, file_size = _save_file_to_storage(file, original_name)
+
             # Auto-detect document type
             doc_type = DOCUMENT_TYPE_MAP.get(file_ext, 'other')
-            
+
             # Insert into database
             insert_query = """
                 INSERT INTO medical_documents
@@ -184,22 +270,22 @@ def upload_document(patient_id):
             
             doc = execute_query(
                 insert_query,
-                (patient_id, doctor_id, doc_type, original_name, str(file_path), 
+                (patient_id, doctor_id, doc_type, original_name, stored_path,
                  original_name, file_size),
                 fetch_one=True
             )
-            
+
             if doc:
                 uploaded.append(serialize_document(doc))
-        
+
         return jsonify({
             'message': f'Uploaded {len(uploaded)} file(s)',
             'documents': uploaded,
             'errors': errors
         }), 201
-        
-    except Exception as e:
-        print(f"Document upload error: {e}")
+
+    except Exception:
+        current_app.logger.exception('Document upload error')
         return jsonify({'error': FAILED_UPLOAD_DOCUMENTS_ERROR}), 500
 
 
@@ -216,7 +302,7 @@ def rename_document(doc_id):
         if user.get('role') != 'doctor':
             return jsonify({'error': INSUFFICIENT_PERMISSIONS_ERROR}), 403
         
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         new_title = data.get('title', '').strip()
         
         if not new_title:
@@ -241,9 +327,9 @@ def rename_document(doc_id):
             'message': 'Document renamed successfully',
             'document': serialize_document(doc)
         }), 200
-        
-    except Exception as e:
-        print(f"Document rename error: {e}")
+
+    except Exception:
+        current_app.logger.exception('Document rename error')
         return jsonify({'error': FAILED_RENAME_DOCUMENT_ERROR}), 500
 
 
@@ -273,17 +359,13 @@ def delete_document(doc_id):
         
         if not result:
             return jsonify({'error': FAILED_DELETE_DOCUMENT_ERROR}), 500
-        
-        # Delete physical file
-        if doc.get('file_path'):
-            file_path = Path(doc['file_path'])
-            if file_path.exists():
-                file_path.unlink()
-        
+
+        _delete_file_from_storage(doc.get('file_path') or '')
+
         return jsonify({'message': 'Document deleted successfully'}), 200
-        
-    except Exception as e:
-        print(f"Document delete error: {e}")
+
+    except Exception:
+        current_app.logger.exception('Document delete error')
         return jsonify({'error': FAILED_DELETE_DOCUMENT_ERROR}), 500
 
 
@@ -313,20 +395,20 @@ def download_document(doc_id):
         elif user.get('role') != 'doctor':
             return jsonify({'error': INSUFFICIENT_PERMISSIONS_ERROR}), 403
         
-        file_path = Path(doc['file_path'])
-        
-        if not file_path.exists():
+        memory_file, local_file_path = _download_file_from_storage(doc.get('file_path') or '')
+
+        if not memory_file and not local_file_path:
             return jsonify({'error': 'File not found on server'}), 404
-        
+
         # Use title as download name if available, otherwise original filename
         download_name = doc.get('title') or doc.get('file_name') or 'document'
-        
-        return send_file(
-            str(file_path),
-            as_attachment=True,
-            download_name=download_name
-        )
-        
-    except Exception as e:
-        print(f"Document download error: {e}")
+
+        if memory_file:
+            memory_file.seek(0)
+            return send_file(memory_file, as_attachment=True, download_name=download_name)
+
+        return send_file(str(local_file_path), as_attachment=True, download_name=download_name)
+
+    except Exception:
+        current_app.logger.exception('Document download error')
         return jsonify({'error': 'Failed to download document'}), 500

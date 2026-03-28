@@ -97,6 +97,12 @@ jobs:
           GITHUB_TOKEN=${{ secrets.DEPLOY_GITHUB_TOKEN }}
           GITHUB_REPO=${{ vars.GITHUB_REPO || 'nhudson99/HHS-patient-portal' }}
           GITHUB_FEATURE_REQUEST_LABELS=${{ vars.GITHUB_FEATURE_REQUEST_LABELS || 'feature-request' }}
+          DOCUMENTS_STORAGE_BACKEND=${{ vars.DOCUMENTS_STORAGE_BACKEND || 'azure_blob' }}
+          DOCUMENTS_LOCAL_DIR=${{ vars.DOCUMENTS_LOCAL_DIR || '/tmp/hhs-documents' }}
+          DOCUMENTS_BLOB_CONTAINER=${{ vars.DOCUMENTS_BLOB_CONTAINER || 'hhs-documents' }}
+          DOCUMENTS_BLOB_ENDPOINT=${{ secrets.DOCUMENTS_BLOB_ENDPOINT }}
+          DOCUMENTS_BLOB_CREDENTIAL=${{ secrets.DOCUMENTS_BLOB_CREDENTIAL }}
+          DOCUMENTS_BLOB_CONNECTION_STRING=${{ secrets.DOCUMENTS_BLOB_CONNECTION_STRING }}
           CHECKIN_ALERT_EMAIL=${{ vars.CHECKIN_ALERT_EMAIL || 'nathan@hudsonitconsulting.com' }}
           GRAPH_TENANT_ID=${{ secrets.GRAPH_TENANT_ID || secrets.AZURE_TENANT_ID }}
           GRAPH_CLIENT_ID=${{ secrets.GRAPH_CLIENT_ID || secrets.AZURE_CLIENT_ID }}
