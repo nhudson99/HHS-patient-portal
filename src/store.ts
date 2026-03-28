@@ -1,4 +1,42 @@
+import { ref } from 'vue'
 import type { User, Appointment, MedicalDocument } from '@/types'
+
+// ─── Admin session (Microsoft SSO) ──────────────────────────────────────────
+// Shared reactive state so App.vue and AdminView.vue use the same session ref.
+// Stored in sessionStorage (tab-scoped) intentionally.
+
+export interface AdminSession {
+  email: string
+  name: string
+  idToken: string
+}
+
+export const ADMIN_SESSION_KEY = 'adminSession'
+
+export const adminSession = ref<AdminSession | null>(null)
+
+const _storedAdmin = sessionStorage.getItem(ADMIN_SESSION_KEY)
+if (_storedAdmin) {
+  try {
+    adminSession.value = JSON.parse(_storedAdmin) as AdminSession
+  } catch {
+    sessionStorage.removeItem(ADMIN_SESSION_KEY)
+  }
+}
+
+export function setAdminSession(session: AdminSession): void {
+  // Enforce single session: clear any active portal session when admin logs in.
+  localStorage.removeItem('sessionToken')
+  localStorage.removeItem('currentUser')
+  setCurrentUser(null)
+  sessionStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(session))
+  adminSession.value = session
+}
+
+export function clearAdminSession(): void {
+  sessionStorage.removeItem(ADMIN_SESSION_KEY)
+  adminSession.value = null
+}
 
 // Hardcoded users for demo
 export const users: User[] = [

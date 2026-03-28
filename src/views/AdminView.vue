@@ -36,17 +36,6 @@
 
     <!-- ─── Admin dashboard ─── -->
     <div v-else class="admin-dashboard">
-      <header class="admin-header">
-        <div class="admin-header-inner">
-          <h1>🏥 HHS Admin</h1>
-          <div class="admin-user-info">
-            <span class="admin-badge">ADMIN</span>
-            <span class="admin-username">{{ adminSession.name || adminSession.email }}</span>
-            <button class="admin-logout-btn" @click="signOut">Sign out</button>
-          </div>
-        </div>
-      </header>
-
       <main class="admin-main">
         <div class="admin-welcome">
           <h2>Welcome, {{ adminSession.name || adminSession.email }}</h2>
@@ -255,15 +244,9 @@ import { ref, onMounted } from 'vue'
 import { msalInstance, loginRequest } from '@/plugins/msal'
 import { RouterLink } from 'vue-router'
 import type { AuthenticationResult, AccountInfo } from '@azure/msal-browser'
+import { adminSession, setAdminSession } from '@/store'
 
 const ALLOWED_DOMAIN = 'hudsonitconsulting.com'
-const STORAGE_KEY = 'adminSession'
-
-interface AdminSession {
-  email: string
-  name: string
-  idToken: string
-}
 
 interface DoctorRecord {
   id: string
@@ -336,7 +319,6 @@ interface PatientForm {
 
 const isSigningIn = ref(false)
 const loginError = ref('')
-const adminSession = ref<AdminSession | null>(null)
 const activeSection = ref<'doctors' | 'patients' | 'logs'>('doctors')
 const doctors = ref<DoctorRecord[]>([])
 const patients = ref<PatientRecord[]>([])
@@ -653,14 +635,13 @@ async function completeSignIn(result: AuthenticationResult): Promise<boolean> {
   }
 
   const data = await verifyRes.json()
-  const session: AdminSession = {
+  const session = {
     email: data.email ?? email,
     name: data.name ?? result.account?.name ?? email,
     idToken: result.idToken
   }
 
-  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(session))
-  adminSession.value = session
+  setAdminSession(session)
   await loadAdminData()
   normalizeAdminUrl()
   return true
@@ -692,14 +673,9 @@ onMounted(async () => {
     normalizeAdminUrl()
   }
 
-  const stored = sessionStorage.getItem(STORAGE_KEY)
-  if (stored) {
-    try {
-      adminSession.value = JSON.parse(stored) as AdminSession
-      await loadAdminData()
-    } catch {
-      sessionStorage.removeItem(STORAGE_KEY)
-    }
+  // adminSession is initialized from sessionStorage by the store at module load.
+  if (adminSession.value) {
+    await loadAdminData()
   }
 
   isSigningIn.value = false
@@ -716,24 +692,6 @@ async function signIn() {
     loginError.value = msg || 'Sign-in failed. Please try again.'
     console.error('[AdminView] MSAL error:', err)
     isSigningIn.value = false
-  }
-}
-
-async function signOut() {
-  sessionStorage.removeItem(STORAGE_KEY)
-  adminSession.value = null
-  doctors.value = []
-  patients.value = []
-  errorLogs.value = []
-  resetDoctorForm()
-  resetPatientForm()
-
-  const accounts = msalInstance.getAllAccounts()
-  if (accounts.length > 0) {
-    await msalInstance.logoutRedirect({
-      account: accounts[0],
-      postLogoutRedirectUri: `${globalThis.location.origin}/admin`
-    }).catch(() => {})
   }
 }
 </script>
@@ -864,63 +822,6 @@ async function signOut() {
 /* ── Admin dashboard ─────────────────────────────────────────────────────── */
 .admin-dashboard {
   min-height: 100vh;
-}
-
-.admin-header {
-  background: linear-gradient(90deg, #1e3a5f 0%, #0f6cbd 100%);
-  padding: 0 24px;
-}
-
-.admin-header-inner {
-  max-width: 1200px;
-  margin: 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 64px;
-}
-
-.admin-header h1 {
-  color: #fff;
-  font-size: 20px;
-  font-weight: 700;
-  margin: 0;
-}
-
-.admin-user-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.admin-badge {
-  background: rgba(15, 23, 42, 0.45);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  padding: 3px 8px;
-  border-radius: 4px;
-}
-
-.admin-username {
-  color: #ffffff;
-  font-size: 14px;
-}
-
-.admin-logout-btn {
-  background: rgba(15, 23, 42, 0.28);
-  border: 1px solid rgba(255,255,255,0.45);
-  color: #fff;
-  border-radius: 6px;
-  padding: 6px 14px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.admin-logout-btn:hover {
-  background: rgba(15, 23, 42, 0.4);
 }
 
 .admin-main {

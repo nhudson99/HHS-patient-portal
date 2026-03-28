@@ -1,12 +1,5 @@
 <template>
   <div class="patients-page">
-    <header class="page-header">
-      <div class="header-content">
-        <h1>Patients</h1>
-        <p class="subtitle">Browse and view patient profiles</p>
-      </div>
-    </header>
-
     <div class="content" :class="{ split: selectedPatient }">
       <aside class="patients-list">
         <div class="list-header">
@@ -687,22 +680,6 @@ function formatFileSize(bytes: number): string {
 .patients-page {
   min-height: 100vh;
   background: #f5f7fb;
-}
-
-.page-header {
-  background: white;
-  border-bottom: 1px solid #e5e7eb;
-  padding: 1.5rem 2rem;
-}
-
-.header-content h1 {
-  margin: 0;
-  font-size: 1.75rem;
-}
-
-.subtitle {
-  margin: 0.25rem 0 0;
-  color: #6b7280;
 }
 
 .content {

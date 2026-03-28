@@ -47,7 +47,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { authApi } from '@/api'
-import { setCurrentUser } from '@/store'
+import { setCurrentUser, clearAdminSession } from '@/store'
 
 const router = useRouter()
 const username = ref('')
@@ -70,6 +70,9 @@ const handleLogin = async () => {
     }
     
     if (response.data) {
+      // Enforce single session: clear any active admin SSO session
+      clearAdminSession()
+
       // Store session token and user data
       localStorage.setItem('sessionToken', response.data.sessionToken)
       localStorage.setItem('currentUser', JSON.stringify(response.data.user))

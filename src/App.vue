@@ -19,6 +19,7 @@
           >
             FEATURE REQUEST
           </button>
+          <span v-if="adminSession" class="admin-role-badge">ADMIN</span>
           <span class="user-name">{{ userName }}</span>
           <button @click="handleLogout" class="logout-btn">Logout</button>
         </div>
@@ -72,7 +73,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, onMounted } from 'vue'
 import { RouterView, RouterLink, useRoute, useRouter } from 'vue-router'
-import { logout } from '@/store'
+import { logout, adminSession, clearAdminSession } from '@/store'
 
 type NavButton = {
   label: string
@@ -105,16 +106,18 @@ const loadUser = () => {
 }
 
 const showHeader = computed(() => {
-  // Show header for all authenticated routes
-  return !!currentUser.value && route.path !== '/'
+  // Show header for all authenticated routes (portal or admin)
+  return (!!currentUser.value || !!adminSession.value) && route.path !== '/'
 })
 
 const userName = computed(() => {
+  if (adminSession.value) return adminSession.value.name || adminSession.value.email
   if (!currentUser.value) return ''
   return currentUser.value.name || currentUser.value.username || ''
 })
 
 const pageTitle = computed(() => {
+  if (adminSession.value) return 'HHS Admin'
   if (route.path.startsWith('/profile')) return 'My Profile'
   if (route.path.startsWith('/patients')) return 'Patients'
   if (route.path.startsWith('/doctor')) return 'Doctor Dashboard'
@@ -123,6 +126,7 @@ const pageTitle = computed(() => {
 })
 
 const navButtons = computed<NavButton[]>(() => {
+  if (adminSession.value) return []
   if (!currentUser.value) return []
   if (currentUser.value.role === 'doctor') {
     return [
@@ -215,9 +219,12 @@ async function submitFeatureRequest() {
 }
 
 const handleLogout = () => {
+  if (adminSession.value) {
+    clearAdminSession()
+    router.push('/admin')
+    return
+  }
   logout()
-  localStorage.removeItem('sessionToken')
-  localStorage.removeItem('currentUser')
   currentUser.value = null
   router.push('/')
 }
@@ -315,6 +322,16 @@ body {
 
 .logout-btn:hover {
   background: rgba(255,255,255,0.3);
+}
+
+.admin-role-badge {
+  background: rgba(15, 23, 42, 0.4);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  border-radius: 4px;
 }
 
 .feature-request-btn {
