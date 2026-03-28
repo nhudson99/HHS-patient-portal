@@ -70,10 +70,7 @@ def _get_blob_service_client() -> BlobServiceClient:
     if _blob_service_client is not None:
         return _blob_service_client
 
-    if DOCUMENTS_BLOB_CONNECTION_STRING:
-        _blob_service_client = BlobServiceClient.from_connection_string(DOCUMENTS_BLOB_CONNECTION_STRING)
-        return _blob_service_client
-
+    # Try endpoint + credential first (preferred method)
     if DOCUMENTS_BLOB_ENDPOINT and DOCUMENTS_BLOB_CREDENTIAL:
         _blob_service_client = BlobServiceClient(
             account_url=DOCUMENTS_BLOB_ENDPOINT,
@@ -81,9 +78,17 @@ def _get_blob_service_client() -> BlobServiceClient:
         )
         return _blob_service_client
 
+    # Fall back to connection string if endpoint method not available
+    if DOCUMENTS_BLOB_CONNECTION_STRING and DOCUMENTS_BLOB_CONNECTION_STRING.lower() not in ('disabled', ''):
+        try:
+            _blob_service_client = BlobServiceClient.from_connection_string(DOCUMENTS_BLOB_CONNECTION_STRING)
+            return _blob_service_client
+        except ValueError as e:
+            current_app.logger.warning(f"Failed to parse connection string: {e}")
+
     raise RuntimeError(
         'Azure Blob storage backend selected but credentials are incomplete. '
-        'Set DOCUMENTS_BLOB_CONNECTION_STRING or both DOCUMENTS_BLOB_ENDPOINT and DOCUMENTS_BLOB_CREDENTIAL.'
+        'Set both DOCUMENTS_BLOB_ENDPOINT and DOCUMENTS_BLOB_CREDENTIAL, or set a valid DOCUMENTS_BLOB_CONNECTION_STRING.'
     )
 
 
