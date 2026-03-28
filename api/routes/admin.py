@@ -28,7 +28,7 @@ import jwt
 from jwt import PyJWKClient, PyJWKClientError
 import bcrypt
 
-from api.db.connection import execute_query
+from api.db.connection import execute_query, DatabaseTransaction
 
 logger = logging.getLogger(__name__)
 
@@ -317,38 +317,39 @@ def create_doctor():
     temp_password = _generate_temp_password()
     password_hash, salt = _build_password_hash(temp_password)
 
-    user = execute_query(
-        """
-        INSERT INTO users (username, email, password_hash, salt, role, must_change_password)
-        VALUES (%s, %s, %s, %s, 'doctor', true)
-        RETURNING id, username, email, role
-        """,
-        (data['username'].strip(), data['email'].strip().lower(), password_hash, salt),
-        fetch_one=True
-    )
-
-    doctor = execute_query(
-        """
-        INSERT INTO doctors (
-            user_id, first_name, last_name, specialty, license_number,
-            license_state, phone, office_address
+    with DatabaseTransaction() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO users (username, email, password_hash, salt, role, must_change_password)
+            VALUES (%s, %s, %s, %s, 'doctor', true)
+            RETURNING id, username, email, role
+            """,
+            (data['username'].strip(), data['email'].strip().lower(), password_hash, salt),
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        RETURNING id, user_id, first_name, last_name, specialty, license_number,
-                  license_state, phone, office_address, created_at, updated_at
-        """,
-        (
-            user['id'],
-            data['firstName'].strip(),
-            data['lastName'].strip(),
-            data['specialty'].strip(),
-            data['licenseNumber'].strip(),
-            (data.get('licenseState') or '').strip() or None,
-            (data.get('phone') or '').strip() or None,
-            (data.get('officeAddress') or '').strip() or None,
-        ),
-        fetch_one=True
-    )
+        user = cursor.fetchone()
+
+        cursor.execute(
+            """
+            INSERT INTO doctors (
+                user_id, first_name, last_name, specialty, license_number,
+                license_state, phone, office_address
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id, user_id, first_name, last_name, specialty, license_number,
+                      license_state, phone, office_address, created_at, updated_at
+            """,
+            (
+                user['id'],
+                data['firstName'].strip(),
+                data['lastName'].strip(),
+                data['specialty'].strip(),
+                data['licenseNumber'].strip(),
+                (data.get('licenseState') or '').strip() or None,
+                (data.get('phone') or '').strip() or None,
+                (data.get('officeAddress') or '').strip() or None,
+            ),
+        )
+        doctor = cursor.fetchone()
 
     payload = dict(doctor)
     payload['username'] = user['username']
@@ -473,30 +474,31 @@ def create_patient():
     temp_password = _generate_temp_password()
     password_hash, salt = _build_password_hash(temp_password)
 
-    user = execute_query(
-        """
-        INSERT INTO users (username, email, password_hash, salt, role, must_change_password)
-        VALUES (%s, %s, %s, %s, 'patient', true)
-        RETURNING id, username, email, role
-        """,
-        (_clean_data_value(data, 'username'), _clean_data_value(data, 'email').lower(), password_hash, salt),
-        fetch_one=True
-    )
-
-    patient = execute_query(
-        """
-        INSERT INTO patients (
-            user_id, first_name, last_name, date_of_birth, phone, address, city,
-            state, zip_code, emergency_contact_name, emergency_contact_phone
+    with DatabaseTransaction() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO users (username, email, password_hash, salt, role, must_change_password)
+            VALUES (%s, %s, %s, %s, 'patient', true)
+            RETURNING id, username, email, role
+            """,
+            (_clean_data_value(data, 'username'), _clean_data_value(data, 'email').lower(), password_hash, salt),
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        RETURNING id, user_id, first_name, last_name, date_of_birth, phone,
-                  address, city, state, zip_code, emergency_contact_name,
-                  emergency_contact_phone, created_at, updated_at
-        """,
-        _build_patient_insert_values(data, user['id']),
-        fetch_one=True
-    )
+        user = cursor.fetchone()
+
+        cursor.execute(
+            """
+            INSERT INTO patients (
+                user_id, first_name, last_name, date_of_birth, phone, address, city,
+                state, zip_code, emergency_contact_name, emergency_contact_phone
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id, user_id, first_name, last_name, date_of_birth, phone,
+                      address, city, state, zip_code, emergency_contact_name,
+                      emergency_contact_phone, created_at, updated_at
+            """,
+            _build_patient_insert_values(data, user['id']),
+        )
+        patient = cursor.fetchone()
 
     payload = dict(patient)
     payload['username'] = user['username']

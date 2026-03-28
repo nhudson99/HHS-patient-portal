@@ -22,10 +22,12 @@ const resolveRedirectUri = (): string => {
 
   try {
     const parsedUrl = new URL(configuredRedirectUri)
-    const configuredIsLocalhost = ['localhost', '127.0.0.1'].includes(parsedUrl.hostname)
-    const runtimeIsLocalhost = ['localhost', '127.0.0.1'].includes(globalThis.location.hostname)
+    const runtimeOrigin = globalThis.location.origin
 
-    if (configuredIsLocalhost && !runtimeIsLocalhost) {
+    // Safety: never redirect across origins from the currently loaded app.
+    // This prevents local testing from jumping to production when dist was built
+    // with a production VITE_AZURE_REDIRECT_URI.
+    if (parsedUrl.origin !== runtimeOrigin) {
       return runtimeAdminUrl
     }
 
