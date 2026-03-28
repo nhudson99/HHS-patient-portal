@@ -18,4 +18,5 @@ flask-talisman==1.1.0
 
 # Background tasks
 APScheduler==3.10.4
+azure-storage-blob==12.24.0
 

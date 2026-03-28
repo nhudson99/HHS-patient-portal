@@ -236,9 +236,12 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import type { Patient, PatientProperty, PatientDocument } from '@/types'
+import { logout } from '@/store'
 
 const patients = ref<Patient[]>([])
+const router = useRouter()
 const selectedPatientId = ref<string | null>(null)
 const loading = ref(false)
 const error = ref('')
@@ -314,6 +317,16 @@ function formatDate(dateStr: string) {
   })
 }
 
+async function handleAuthFailure(response: Response): Promise<boolean> {
+  if (response.status !== 401) {
+    return false
+  }
+
+  logout()
+  await router.replace('/')
+  return true
+}
+
 async function loadPatients() {
   loading.value = true
   error.value = ''
@@ -323,6 +336,10 @@ async function loadPatients() {
         'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
       }
     })
+
+    if (await handleAuthFailure(response)) {
+      return
+    }
 
     if (!response.ok) {
       error.value = 'Failed to load patients'
@@ -353,6 +370,10 @@ async function loadProperties() {
         'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
       }
     })
+
+    if (await handleAuthFailure(response)) {
+      return
+    }
 
     if (!response.ok) {
       propertiesError.value = 'Failed to load properties'
@@ -386,6 +407,10 @@ async function saveProperty() {
       })
     })
 
+    if (await handleAuthFailure(response)) {
+      return
+    }
+
     if (!response.ok) {
       propertiesError.value = 'Failed to add property'
       return
@@ -414,6 +439,10 @@ async function deleteProperty() {
         }
       }
     )
+
+    if (await handleAuthFailure(response)) {
+      return
+    }
 
     if (!response.ok) {
       propertiesError.value = 'Failed to delete property'
@@ -454,6 +483,10 @@ async function loadDocuments() {
         'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
       }
     })
+
+    if (await handleAuthFailure(response)) {
+      return
+    }
 
     if (!response.ok) {
       documentsError.value = 'Failed to load documents'
@@ -496,6 +529,10 @@ async function handleFileUpload(event: Event) {
       },
       body: formData
     })
+
+    if (await handleAuthFailure(response)) {
+      return
+    }
     
     if (!response.ok) {
       const data = await response.json()
@@ -528,6 +565,10 @@ async function downloadDocument(doc: PatientDocument) {
         'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
       }
     })
+
+    if (await handleAuthFailure(response)) {
+      return
+    }
     
     if (!response.ok) {
       documentsError.value = 'Failed to download document'
@@ -570,6 +611,10 @@ async function renameDocument() {
       },
       body: JSON.stringify({ title: renameForm.value.title.trim() })
     })
+
+    if (await handleAuthFailure(response)) {
+      return
+    }
     
     if (!response.ok) {
       documentsError.value = 'Failed to rename document'
@@ -608,6 +653,10 @@ async function deleteDocument() {
         'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
       }
     })
+
+    if (await handleAuthFailure(response)) {
+      return
+    }
     
     if (!response.ok) {
       documentsError.value = 'Failed to delete document'

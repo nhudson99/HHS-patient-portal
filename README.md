@@ -83,6 +83,24 @@ After deploy, add this redirect URI to your Azure app registration (SPA platform
 
 - `https://<WEB_FQDN>/admin`
 
+### 6) Persistent document storage (Azure Blob)
+
+For production, configure documents to use Azure Blob storage instead of container-local disk:
+
+- `DOCUMENTS_STORAGE_BACKEND=azure_blob`
+- `DOCUMENTS_BLOB_CONTAINER=hhs-documents`
+- `DOCUMENTS_BLOB_ENDPOINT` (recommended as secret)
+- `DOCUMENTS_BLOB_CREDENTIAL` (required secret; account key or SAS)
+
+Optional alternative secret:
+
+- `DOCUMENTS_BLOB_CONNECTION_STRING` (if set, it is used instead of endpoint+credential)
+
+Local development can keep:
+
+- `DOCUMENTS_STORAGE_BACKEND=local`
+- `DOCUMENTS_LOCAL_DIR=/tmp/hhs-documents`
+
 ## Azure deploy on `main` push
 
 This repo now includes `.github/workflows/deploy-main.yml`, which runs `azure-deploy.sh` automatically on every push to `main` and also supports manual runs via GitHub Actions.
@@ -96,6 +114,9 @@ This repo now includes `.github/workflows/deploy-main.yml`, which runs `azure-de
 - `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`
 - `REDIS_URL` (optional, if used)
 - `DEPLOY_GITHUB_TOKEN` (optional, if doctor feature requests should post to GitHub)
+- `DOCUMENTS_BLOB_ENDPOINT` (if using endpoint+credential mode)
+- `DOCUMENTS_BLOB_CREDENTIAL` (if using endpoint+credential mode)
+- `DOCUMENTS_BLOB_CONNECTION_STRING` (optional alternative to endpoint+credential)
 
 ### Recommended GitHub Actions variables
 
@@ -107,6 +128,7 @@ This repo now includes `.github/workflows/deploy-main.yml`, which runs `azure-de
 - `MAX_LOGIN_ATTEMPTS`, `ACCOUNT_LOCKOUT_MINUTES`, `SESSION_TIMEOUT_MINUTES`
 - `GUNICORN_WORKERS`, `GUNICORN_THREADS`, `GUNICORN_TIMEOUT`
 - `GITHUB_REPO`, `GITHUB_FEATURE_REQUEST_LABELS`, `APP_DOMAIN`
+- `DOCUMENTS_STORAGE_BACKEND`, `DOCUMENTS_BLOB_CONTAINER`, `DOCUMENTS_LOCAL_DIR`
 
 The workflow builds the frontend, runs backend tests, logs into Azure, writes a temporary env file for `azure-deploy.sh`, then deploys the app when `main` receives a push.
 

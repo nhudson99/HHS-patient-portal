@@ -141,6 +141,21 @@ if [[ -z "$GRAPH_CLIENT_SECRET_VALUE" ]]; then
   GRAPH_CLIENT_SECRET_VALUE="disabled"
 fi
 
+DOCUMENTS_BLOB_ENDPOINT_VALUE="${DOCUMENTS_BLOB_ENDPOINT:-}"
+if [[ -z "$DOCUMENTS_BLOB_ENDPOINT_VALUE" ]]; then
+  DOCUMENTS_BLOB_ENDPOINT_VALUE="disabled"
+fi
+
+DOCUMENTS_BLOB_CREDENTIAL_VALUE="${DOCUMENTS_BLOB_CREDENTIAL:-}"
+if [[ -z "$DOCUMENTS_BLOB_CREDENTIAL_VALUE" ]]; then
+  DOCUMENTS_BLOB_CREDENTIAL_VALUE="disabled"
+fi
+
+DOCUMENTS_BLOB_CONNECTION_STRING_VALUE="${DOCUMENTS_BLOB_CONNECTION_STRING:-}"
+if [[ -z "$DOCUMENTS_BLOB_CONNECTION_STRING_VALUE" ]]; then
+  DOCUMENTS_BLOB_CONNECTION_STRING_VALUE="disabled"
+fi
+
 echo "🔐 Authenticating Docker with ACR..."
 az acr login --name "$AZ_ACR_NAME" >/dev/null
 
@@ -172,6 +187,9 @@ if [[ "$APP_EXISTS" != "true" ]]; then
       db-password="$DB_PASSWORD" \
       session-secret="$SESSION_SECRET" \
       jwt-secret="$JWT_SECRET" \
+      documents-blob-endpoint="$DOCUMENTS_BLOB_ENDPOINT_VALUE" \
+      documents-blob-credential="$DOCUMENTS_BLOB_CREDENTIAL_VALUE" \
+      documents-blob-connection-string="$DOCUMENTS_BLOB_CONNECTION_STRING_VALUE" \
       graph-client-secret="$GRAPH_CLIENT_SECRET_VALUE" \
       smtp-password="$SMTP_PASSWORD_SECRET_VALUE" \
       github-token="$GITHUB_TOKEN_SECRET_VALUE" \
@@ -200,6 +218,9 @@ if [[ "$APP_EXISTS" != "true" ]]; then
       SESSION_TIMEOUT_MINUTES="${SESSION_TIMEOUT_MINUTES:-15}" \
       GITHUB_REPO="${GITHUB_REPO:-}" \
       GITHUB_FEATURE_REQUEST_LABELS="${GITHUB_FEATURE_REQUEST_LABELS:-feature-request}" \
+      DOCUMENTS_STORAGE_BACKEND="${DOCUMENTS_STORAGE_BACKEND:-azure_blob}" \
+      DOCUMENTS_LOCAL_DIR="${DOCUMENTS_LOCAL_DIR:-/tmp/hhs-documents}" \
+      DOCUMENTS_BLOB_CONTAINER="${DOCUMENTS_BLOB_CONTAINER:-hhs-documents}" \
       CHECKIN_ALERT_EMAIL="${CHECKIN_ALERT_EMAIL:-nathan@hudsonitconsulting.com}" \
       GRAPH_TENANT_ID="${GRAPH_TENANT_ID:-$AZURE_TENANT_ID}" \
       GRAPH_CLIENT_ID="${GRAPH_CLIENT_ID:-$AZURE_CLIENT_ID}" \
@@ -241,6 +262,12 @@ else
       SESSION_TIMEOUT_MINUTES="${SESSION_TIMEOUT_MINUTES:-15}" \
       GITHUB_REPO="${GITHUB_REPO:-}" \
       GITHUB_FEATURE_REQUEST_LABELS="${GITHUB_FEATURE_REQUEST_LABELS:-feature-request}" \
+      DOCUMENTS_STORAGE_BACKEND="${DOCUMENTS_STORAGE_BACKEND:-azure_blob}" \
+      DOCUMENTS_LOCAL_DIR="${DOCUMENTS_LOCAL_DIR:-/tmp/hhs-documents}" \
+      DOCUMENTS_BLOB_CONTAINER="${DOCUMENTS_BLOB_CONTAINER:-hhs-documents}" \
+      DOCUMENTS_BLOB_ENDPOINT=secretref:documents-blob-endpoint \
+      DOCUMENTS_BLOB_CREDENTIAL=secretref:documents-blob-credential \
+      DOCUMENTS_BLOB_CONNECTION_STRING=secretref:documents-blob-connection-string \
       CHECKIN_ALERT_EMAIL="${CHECKIN_ALERT_EMAIL:-nathan@hudsonitconsulting.com}" \
       GRAPH_TENANT_ID="${GRAPH_TENANT_ID:-$AZURE_TENANT_ID}" \
       GRAPH_CLIENT_ID="${GRAPH_CLIENT_ID:-$AZURE_CLIENT_ID}" \
@@ -261,6 +288,9 @@ else
         db-password="$DB_PASSWORD" \
         session-secret="$SESSION_SECRET" \
         jwt-secret="$JWT_SECRET" \
+        documents-blob-endpoint="$DOCUMENTS_BLOB_ENDPOINT_VALUE" \
+        documents-blob-credential="$DOCUMENTS_BLOB_CREDENTIAL_VALUE" \
+        documents-blob-connection-string="$DOCUMENTS_BLOB_CONNECTION_STRING_VALUE" \
           graph-client-secret="$GRAPH_CLIENT_SECRET_VALUE" \
         smtp-password="$SMTP_PASSWORD_SECRET_VALUE" \
         github-token="$GITHUB_TOKEN_SECRET_VALUE" >/dev/null
@@ -271,6 +301,9 @@ else
       --secrets \
         session-secret="$SESSION_SECRET" \
         jwt-secret="$JWT_SECRET" \
+        documents-blob-endpoint="$DOCUMENTS_BLOB_ENDPOINT_VALUE" \
+        documents-blob-credential="$DOCUMENTS_BLOB_CREDENTIAL_VALUE" \
+        documents-blob-connection-string="$DOCUMENTS_BLOB_CONNECTION_STRING_VALUE" \
           graph-client-secret="$GRAPH_CLIENT_SECRET_VALUE" \
         smtp-password="$SMTP_PASSWORD_SECRET_VALUE" \
         github-token="$GITHUB_TOKEN_SECRET_VALUE" >/dev/null
@@ -283,6 +316,9 @@ else
       DB_PASSWORD=secretref:db-password \
       SESSION_SECRET=secretref:session-secret \
       JWT_SECRET=secretref:jwt-secret \
+      DOCUMENTS_BLOB_ENDPOINT=secretref:documents-blob-endpoint \
+      DOCUMENTS_BLOB_CREDENTIAL=secretref:documents-blob-credential \
+      DOCUMENTS_BLOB_CONNECTION_STRING=secretref:documents-blob-connection-string \
       GRAPH_CLIENT_SECRET=secretref:graph-client-secret \
       SMTP_PASSWORD=secretref:smtp-password \
       GITHUB_TOKEN=secretref:github-token >/dev/null

@@ -87,8 +87,9 @@ def execute_query(query, params=None, fetch_one=False, fetch_all=False):
         elif fetch_all:
             result = cursor.fetchall()
         else:
-            conn.commit()
             result = cursor.rowcount
+
+        conn.commit()
 
         return result
         
