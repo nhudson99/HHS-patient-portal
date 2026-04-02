@@ -1,44 +1,30 @@
 <template>
   <div class="login-container">
-    <button @click="goToCheckIn" class="checkin-link">Check In</button>
-    <div class="login-card">
-      <div class="logo">
-        <h1>🏥</h1>
+    <button @click="goToCheckIn" class="checkin-link">Check In →</button>
+    <div class="login-split">
+      <div class="login-brand">
+        <div class="brand-icon">🏥</div>
+        <h1>Hudson Health System</h1>
+        <p>Secure access to your patient portal — manage appointments, documents, and your care team in one place.</p>
       </div>
-      <h2>Hudson Health System</h2>
-      <p class="subtitle">Patient Portal</p>
-
-      <form @submit.prevent="handleLogin" class="login-form">
-        <div class="form-group">
-          <label for="username">Username</label>
-          <input
-            id="username"
-            v-model="username"
-            type="text"
-            placeholder="Enter username"
-            required
-          />
-        </div>
-
-        <div class="form-group">
-          <label for="password">Password</label>
-          <input
-            id="password"
-            v-model="password"
-            type="password"
-            placeholder="Enter password"
-            required
-          />
-        </div>
-
-        <button type="submit" class="login-button" :disabled="loading">
-          {{ loading ? 'Logging in...' : 'Login' }}
-        </button>
-
-        <div v-if="error" class="error-message">
-          {{ error }}
-        </div>
-      </form>
+      <div class="login-card">
+        <h2>Sign in</h2>
+        <p class="card-subtitle">Use your portal credentials</p>
+        <form @submit.prevent="handleLogin" class="login-form">
+          <div class="form-group">
+            <label for="username">Username</label>
+            <input id="username" v-model="username" type="text" placeholder="Enter username" required autocomplete="username" />
+          </div>
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input id="password" v-model="password" type="password" placeholder="Enter password" required autocomplete="current-password" />
+          </div>
+          <div v-if="error" class="error-message">{{ error }}</div>
+          <button type="submit" class="login-button" :disabled="loading">
+            {{ loading ? 'Signing in…' : 'Sign in' }}
+          </button>
+        </form>
+      </div>
     </div>
   </div>
 </template>
@@ -116,115 +102,173 @@ const goToCheckIn = () => {
 
 <style scoped>
 .login-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 20px;
+  background: #f8faff;
+  display: flex;
+  align-items: stretch;
+  position: relative;
+}
+
+.login-split {
+  display: flex;
+  width: 100%;
+  min-height: 100vh;
+}
+
+.login-brand {
+  flex: 1;
+  background: linear-gradient(145deg, #1e3a5f 0%, #2563eb 100%);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 4rem 3rem;
+  color: #fff;
+}
+
+.brand-icon {
+  font-size: 56px;
+  margin-bottom: 1.5rem;
+}
+
+.login-brand h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0 0 1rem;
+  line-height: 1.2;
+}
+
+.login-brand p {
+  font-size: 1.05rem;
+  opacity: 0.85;
+  line-height: 1.7;
+  max-width: 380px;
 }
 
 .login-card {
-  background: white;
-  padding: 40px;
-  border-radius: 12px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
-  max-width: 450px;
-  width: 100%;
+  width: 420px;
+  flex-shrink: 0;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 3rem 2.5rem;
+  box-shadow: -8px 0 40px rgba(0,0,0,0.08);
 }
 
-.logo {
-  text-align: center;
-  font-size: 48px;
-  margin-bottom: 10px;
+.login-card h2 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 0.35rem;
 }
 
-h2 {
-  text-align: center;
-  color: #333;
-  margin-bottom: 5px;
-  font-size: 28px;
-}
-
-.subtitle {
-  text-align: center;
-  color: #666;
-  margin-bottom: 30px;
-  font-size: 16px;
+.card-subtitle {
+  color: #6b7280;
+  margin: 0 0 2rem;
+  font-size: 0.95rem;
 }
 
 .login-form {
-  margin-bottom: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
 }
 
 .form-group {
-  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
 }
 
 label {
-  display: block;
-  margin-bottom: 5px;
-  color: #555;
-  font-weight: 500;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #374151;
 }
 
 input {
-  width: 100%;
-  padding: 12px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  font-size: 14px;
-  transition: border-color 0.3s;
+  padding: 0.75rem 1rem;
+  border: 1.5px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  color: #111827;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  background: #fafafa;
 }
 
 input:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+  background: #fff;
 }
 
 .login-button {
-  width: 100%;
-  padding: 12px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  padding: 0.85rem;
+  background: #2563eb;
+  color: #fff;
   border: none;
-  border-radius: 6px;
-  font-size: 16px;
+  border-radius: 8px;
+  font-size: 1rem;
   font-weight: 600;
-  transition: transform 0.2s;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s;
+  margin-top: 0.5rem;
 }
 
-.login-button:hover {
-  transform: translateY(-2px);
+.login-button:hover:not(:disabled) {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+}
+
+.login-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .error-message {
-  margin-top: 15px;
-  padding: 10px;
-  background: #fee;
-  color: #c33;
-  border-radius: 6px;
-  text-align: center;
-  font-size: 14px;
+  padding: 0.75rem 1rem;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #b91c1c;
+  border-radius: 8px;
+  font-size: 0.9rem;
 }
 
 .checkin-link {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
-  border: 2px solid white;
-  padding: 10px 24px;
-  border-radius: 6px;
-  font-size: 16px;
+  position: fixed;
+  top: 1.25rem;
+  right: 1.5rem;
+  background: #fff;
+  color: #2563eb;
+  border: 1.5px solid #2563eb;
+  padding: 0.5rem 1.25rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
   font-weight: 600;
-  transition: all 0.3s;
-  backdrop-filter: blur(10px);
+  cursor: pointer;
+  z-index: 10;
+  transition: background 0.2s, color 0.2s;
 }
 
 .checkin-link:hover {
-  background: rgba(255, 255, 255, 0.3);
-  transform: translateY(-2px);
+  background: #2563eb;
+  color: #fff;
+}
+
+@media (max-width: 768px) {
+  .login-split {
+    flex-direction: column;
+  }
+  .login-brand {
+    padding: 3rem 2rem 2rem;
+    flex: none;
+  }
+  .login-card {
+    width: auto;
+    flex: 1;
+    padding: 2rem;
+    box-shadow: none;
+  }
 }
 </style>

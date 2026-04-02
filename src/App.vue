@@ -252,6 +252,11 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   background-color: #f5f5f5;
   color: #333;
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background-color: #f0f4f8;
+  color: #111827;
+}
 }
 
 #app {
@@ -264,6 +269,14 @@ body {
   z-index: 1000;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
+.top-header {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  background: #1a3a5c;
+  color: white;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
 }
 
 .header-content {
@@ -273,6 +286,14 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+.header-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0.75rem 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
 }
 
 .header-content h1 {
@@ -308,6 +329,29 @@ body {
 .header-btn.router-link-active {
   background: rgba(255,255,255,0.35);
   font-weight: 700;
+.header-btn {
+  padding: 0.45rem 1rem;
+  background: transparent;
+  color: rgba(255,255,255,0.85);
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.header-btn:hover {
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+}
+
+.header-btn.router-link-active {
+  background: rgba(255,255,255,0.18);
+  color: #fff;
+  font-weight: 600;
+  border-color: rgba(255,255,255,0.55);
+}
 }
 
 .logout-btn {
@@ -321,6 +365,22 @@ body {
 }
 
 .logout-btn:hover {
+  .logout-btn {
+    padding: 0.45rem 1rem;
+    background: transparent;
+    color: rgba(255,255,255,0.85);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background 0.2s, color 0.2s;
+  }
+
+  .logout-btn:hover {
+    background: rgba(239,68,68,0.25);
+    border-color: rgba(239,68,68,0.6);
+    color: #fff;
+  }
   background: rgba(255,255,255,0.3);
 }
 
@@ -331,6 +391,15 @@ body {
   font-weight: 700;
   letter-spacing: 0.08em;
   padding: 3px 8px;
+  .admin-role-badge {
+    background: #ef4444;
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
   border-radius: 4px;
 }
 
@@ -348,6 +417,22 @@ body {
 
 .feature-request-btn:hover {
   background: #e9d5ff;
+.feature-request-btn {
+  padding: 0.4rem 0.9rem;
+  background: transparent;
+  color: rgba(255,255,255,0.85);
+  border: 1px dashed rgba(255,255,255,0.4);
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  transition: background 0.2s;
+}
+
+.feature-request-btn:hover {
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+}
 }
 
 .modal-overlay {

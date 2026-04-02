@@ -1,15 +1,30 @@
 """
 Patients routes for HHS Patient Portal
-Provides read access to patient records for doctors
+Provides patient record access for doctors; allows doctors to create patients
 """
 
 from flask import Blueprint, request, jsonify, current_app
 from datetime import date, datetime
 from api.db.connection import execute_query
 from api.middleware.auth import authenticate
+import secrets
+import string
+import bcrypt
+from api.db.connection import DatabaseTransaction
 
 patients_bp = Blueprint('patients', __name__, url_prefix='/api/patients')
 INSUFFICIENT_PERMISSIONS_ERROR = 'Insufficient permissions'
+
+
+def _generate_temp_password(length: int = 12) -> str:
+    alphabet = string.ascii_letters + string.digits
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
+
+
+def _hash_password(plain: str) -> tuple[str, str]:
+    salt = bcrypt.gensalt(rounds=12).decode()
+    hashed = bcrypt.hashpw(plain.encode(), salt.encode()).decode()
+    return hashed, salt
 
 
 def serialize_patient(patient):
@@ -109,3 +124,84 @@ def list_patients():
     except Exception:
         current_app.logger.exception('Patients retrieval error')
         return jsonify({'error': 'Failed to retrieve patients'}), 500
+
+
+@patients_bp.route('', methods=['POST'])
+@authenticate
+def create_patient():
+    """
+    POST /api/patients
+    Doctor creates a new patient account with a temporary password.
+    """
+    try:
+        user = request.user
+        if user.get('role') != 'doctor':
+            return jsonify({'error': INSUFFICIENT_PERMISSIONS_ERROR}), 403
+
+        data = request.get_json(silent=True) or {}
+        required = ['username', 'email', 'firstName', 'lastName']
+        if not all(data.get(f) for f in required):
+            return jsonify({'error': 'username, email, firstName, and lastName are required'}), 400
+
+        username = data['username'].strip()
+        email = data['email'].strip().lower()
+        first_name = data['firstName'].strip()
+        last_name = data['lastName'].strip()
+        date_of_birth = data.get('dateOfBirth') or None
+        phone = data.get('phone', '').strip() or None
+        address = data.get('address', '').strip() or None
+
+        # Check for duplicate username or email
+        existing = execute_query(
+            "SELECT id FROM users WHERE username = %s OR email = %s",
+            (username, email),
+            fetch_one=True,
+        )
+        if existing:
+            return jsonify({'error': 'Username or email already in use'}), 409
+
+        temp_password = _generate_temp_password()
+        password_hash, salt = _hash_password(temp_password)
+
+        with DatabaseTransaction() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO users (username, email, password_hash, salt, role, must_change_password)
+                VALUES (%s, %s, %s, %s, 'patient', true)
+                RETURNING id, username, email, role
+                """,
+                (username, email, password_hash, salt),
+            )
+            new_user = cursor.fetchone()
+
+            cursor.execute(
+                """
+                INSERT INTO patients (user_id, first_name, last_name, date_of_birth, phone, address)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, user_id, first_name, last_name, date_of_birth, phone, address,
+                          created_at, updated_at
+                """,
+                (new_user['id'], first_name, last_name, date_of_birth, phone, address),
+            )
+            patient = cursor.fetchone()
+
+        result = serialize_patient(dict(patient))
+        result['username'] = new_user['username']
+        result['email'] = new_user['email']
+        result['is_active'] = True
+
+        current_app.logger.info(
+            'Doctor %s created patient %s (%s)',
+            user.get('username'),
+            username,
+            patient['id'],
+        )
+
+        return jsonify({
+            'patient': result,
+            'temporaryPassword': temp_password,
+        }), 201
+
+    except Exception:
+        current_app.logger.exception('Doctor create patient error')
+        return jsonify({'error': 'Failed to create patient'}), 500

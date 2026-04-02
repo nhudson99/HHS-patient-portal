@@ -447,6 +447,9 @@ onMounted(() => {
 
 // Retry loading doctors when switching to the request tab if they failed to load
 watch(activeTab, (newTab) => {
+  if (newTab === 'appointments') {
+    loadAppointments()
+  }
   if (newTab === 'request' && doctors.value.length === 0 && !doctorsLoading.value) {
     loadDoctors()
   }
@@ -492,6 +495,16 @@ watch(activeTab, (newTab) => {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   border-color: transparent;
+.tab-button:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+.tab-button.active {
+  background: #2563eb;
+  color: white;
+  border-color: transparent;
+}
 }
 
 .tab-content {
@@ -524,6 +537,13 @@ watch(activeTab, (newTab) => {
   padding: 20px;
   border-radius: 8px;
   transition: transform 0.2s, box-shadow 0.2s;
+.appointment-card {
+  background: #f8faff;
+  border-left: 4px solid #2563eb;
+  padding: 20px;
+  border-radius: 8px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
 }
 
 .appointment-card:hover {
@@ -578,6 +598,15 @@ watch(activeTab, (newTab) => {
 
 .status-badge.confirmed {
   background: #66bb6a;
+  .status-badge.pending {
+    background: #f59e0b;
+    color: white;
+  }
+
+  .status-badge.confirmed {
+    background: #059669;
+    color: white;
+  }
   color: white;
 }
 
@@ -623,6 +652,11 @@ input, select, textarea {
 
 input:focus, select:focus, textarea:focus {
   outline: none;
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+  }
   border-color: #667eea;
 }
 
@@ -643,6 +677,21 @@ textarea {
 
 .submit-button:hover {
   transform: translateY(-2px);
+.submit-button {
+  background: #2563eb;
+  color: white;
+  border: none;
+  padding: 12px 30px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  transition: background 0.2s, transform 0.15s;
+}
+
+.submit-button:hover {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+}
 }
 
 .success-message {

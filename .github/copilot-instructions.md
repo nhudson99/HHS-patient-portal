@@ -100,6 +100,33 @@ SonarQube for IDE process (required when files are modified):
 
 If DB schema changes are made, include or update an idempotent SQL migration file under `server/db/` and document how to apply it.
 
+## AI Debugging & Testability Playbook
+
+Use this flow for fast, reproducible debugging sessions:
+
+1. Reproduce first with the smallest scope possible:
+  - frontend only: `npm run build`
+  - backend syntax/import check: `python3 -m compileall api -q`
+  - unit tests: `npm run test:unit`
+2. Localize failures to one layer before editing:
+  - routing/session issues: `src/router/index.ts`, `src/store.ts`
+  - API contract/shape issues: `src/api/index.ts` and corresponding `api/routes/*.py`
+  - persistence/data issues: route SQL + `server/db/*.sql`
+3. Prefer additive fixes and preserve response shapes used by existing views.
+4. After each fix, re-run the narrow check that failed first, then broader checks.
+5. When Sonar tooling is unavailable in the environment, explicitly note the blocker and rely on build + compile + tests.
+
+When touching auth/session code, always verify both login directions:
+
+- portal login (`/` -> `/doctor` or `/patient`)
+- admin SSO flow (`/admin`)
+
+When touching scheduling code, always verify:
+
+- day/week/month calendar placement consistency
+- appointment status propagation doctor -> patient
+- date string formats stay `YYYY-MM-DD` for calendar matching
+
 ## Change Management
 
 - Do not refactor unrelated areas in the same change.
