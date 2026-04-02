@@ -1168,16 +1168,36 @@ onMounted(() => {
   .dashboard-header {
     flex-direction: column;
     gap: 1rem;
+    padding: 1rem;
   }
 
   .controls {
     flex-direction: column;
     width: 100%;
+    gap: 0.75rem;
   }
 
-  .week-grid {
-    grid-template-columns: repeat(7, 1fr);
-    gap: 0.25rem;
+  .date-navigation {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .current-date {
+    min-width: unset;
+    width: 100%;
+    text-align: center;
+    font-size: 0.9rem;
+  }
+
+  .calendar-container {
+    margin: 0 0.75rem 1.5rem;
+    overflow-x: auto;
+  }
+
+  .week-view,
+  .month-view,
+  .day-view {
+    min-width: 600px;
   }
 
   .modal {

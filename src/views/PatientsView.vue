@@ -1252,7 +1252,22 @@ function formatFileSize(bytes: number): string {
 }
 
 @media (max-width: 900px) {
+  .content {
+    padding: 1rem;
+  }
+
   .content.split {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .content {
+    padding: 0.75rem;
+    gap: 0.75rem;
+  }
+
+  .detail-grid {
     grid-template-columns: 1fr;
   }
 }

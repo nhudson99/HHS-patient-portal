@@ -578,4 +578,28 @@ input:focus {
   padding: 28px 12px;
   color: #546e7a;
 }
+
+@media (max-width: 480px) {
+  .checkin-container {
+    padding: 12px;
+  }
+
+  .checkin-card {
+    padding: 28px 20px;
+    border-radius: 14px;
+  }
+
+  h2 {
+    font-size: 1.6rem;
+  }
+
+  .detail-row {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .value {
+    text-align: left;
+  }
+}
 </style>

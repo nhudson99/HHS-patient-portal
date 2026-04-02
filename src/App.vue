@@ -250,13 +250,8 @@ watch(
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  background-color: #f5f5f5;
-  color: #333;
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   background-color: #f0f4f8;
   color: #111827;
-}
 }
 
 #app {
@@ -267,25 +262,11 @@ body {
   position: sticky;
   top: 0;
   z-index: 1000;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-.top-header {
-  position: sticky;
-  top: 0;
-  z-index: 1000;
   background: #1a3a5c;
   color: white;
   border-bottom: 1px solid rgba(255,255,255,0.1);
 }
-}
 
-.header-content {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 1rem 2rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
 .header-content {
   max-width: 1400px;
   margin: 0 auto;
@@ -293,42 +274,27 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-}
+  gap: 0.75rem;
 }
 
 .header-content h1 {
   margin: 0;
   font-size: 1.4rem;
+  white-space: nowrap;
 }
 
 .user-actions {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .user-name {
   font-weight: 600;
 }
 
-.header-btn {
-  padding: 0.5rem 1rem;
-  background: rgba(255,255,255,0.2);
-  color: white;
-  border: 1px solid white;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.3s;
-  text-decoration: none;
-}
-
-.header-btn:hover {
-  background: rgba(255,255,255,0.3);
-}
-
-.header-btn.router-link-active {
-  background: rgba(255,255,255,0.35);
-  font-weight: 700;
 .header-btn {
   padding: 0.45rem 1rem;
   background: transparent;
@@ -352,71 +318,34 @@ body {
   font-weight: 600;
   border-color: rgba(255,255,255,0.55);
 }
-}
 
 .logout-btn {
-  padding: 0.5rem 1rem;
-  background: rgba(255,255,255,0.2);
-  color: white;
-  border: 1px solid white;
-  border-radius: 4px;
+  padding: 0.45rem 1rem;
+  background: transparent;
+  color: rgba(255,255,255,0.85);
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 6px;
   cursor: pointer;
-  transition: all 0.3s;
+  font-size: 0.9rem;
+  transition: background 0.2s, color 0.2s;
 }
 
 .logout-btn:hover {
-  .logout-btn {
-    padding: 0.45rem 1rem;
-    background: transparent;
-    color: rgba(255,255,255,0.85);
-    border: 1px solid rgba(255,255,255,0.3);
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 0.9rem;
-    transition: background 0.2s, color 0.2s;
-  }
-
-  .logout-btn:hover {
-    background: rgba(239,68,68,0.25);
-    border-color: rgba(239,68,68,0.6);
-    color: #fff;
-  }
-  background: rgba(255,255,255,0.3);
+  background: rgba(239,68,68,0.25);
+  border-color: rgba(239,68,68,0.6);
+  color: #fff;
 }
 
 .admin-role-badge {
-  background: rgba(15, 23, 42, 0.4);
+  background: #ef4444;
   color: #fff;
-  font-size: 11px;
+  font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.08em;
-  padding: 3px 8px;
-  .admin-role-badge {
-    background: #ef4444;
-    color: #fff;
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    padding: 2px 8px;
-    border-radius: 4px;
-  }
+  padding: 2px 8px;
   border-radius: 4px;
 }
 
-.feature-request-btn {
-  padding: 0.5rem 0.85rem;
-  background: #ffffff;
-  color: #4c1d95;
-  border: 1px solid #c4b5fd;
-  border-radius: 999px;
-  font-weight: 700;
-  font-size: 0.78rem;
-  letter-spacing: 0.05em;
-  transition: all 0.2s;
-}
-
-.feature-request-btn:hover {
-  background: #e9d5ff;
 .feature-request-btn {
   padding: 0.4rem 0.9rem;
   background: transparent;
@@ -432,7 +361,6 @@ body {
 .feature-request-btn:hover {
   background: rgba(255,255,255,0.12);
   color: #fff;
-}
 }
 
 .modal-overlay {
@@ -587,5 +515,46 @@ button {
 
 input, select, textarea {
   font-family: inherit;
+}
+
+@media (max-width: 768px) {
+  .header-content {
+    padding: 0.6rem 1rem;
+    flex-wrap: wrap;
+  }
+
+  .header-content h1 {
+    font-size: 1.1rem;
+  }
+
+  .user-actions {
+    gap: 0.4rem;
+  }
+
+  .header-btn,
+  .logout-btn,
+  .feature-request-btn {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.8rem;
+  }
+
+  .user-name {
+    font-size: 0.85rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .header-content {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .user-actions {
+    width: 100%;
+  }
+
+  .user-name {
+    display: none;
+  }
 }
 </style>
