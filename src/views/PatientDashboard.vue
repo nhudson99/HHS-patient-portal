@@ -487,15 +487,6 @@ watch(activeTab, (newTab) => {
 }
 
 .tab-button:hover {
-  border-color: #667eea;
-  color: #667eea;
-}
-
-.tab-button.active {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border-color: transparent;
-.tab-button:hover {
   border-color: #2563eb;
   color: #2563eb;
 }
@@ -504,7 +495,6 @@ watch(activeTab, (newTab) => {
   background: #2563eb;
   color: white;
   border-color: transparent;
-}
 }
 
 .tab-content {
@@ -532,18 +522,11 @@ watch(activeTab, (newTab) => {
 }
 
 .appointment-card {
-  background: #f8f9fa;
-  border-left: 4px solid #667eea;
-  padding: 20px;
-  border-radius: 8px;
-  transition: transform 0.2s, box-shadow 0.2s;
-.appointment-card {
   background: #f8faff;
   border-left: 4px solid #2563eb;
   padding: 20px;
   border-radius: 8px;
   transition: transform 0.2s, box-shadow 0.2s;
-}
 }
 
 .appointment-card:hover {
@@ -592,21 +575,12 @@ watch(activeTab, (newTab) => {
 }
 
 .status-badge.pending {
-  background: #ffa726;
+  background: #f59e0b;
   color: white;
 }
 
 .status-badge.confirmed {
-  background: #66bb6a;
-  .status-badge.pending {
-    background: #f59e0b;
-    color: white;
-  }
-
-  .status-badge.confirmed {
-    background: #059669;
-    color: white;
-  }
+  background: #059669;
   color: white;
 }
 
@@ -652,31 +626,14 @@ input, select, textarea {
 
 input:focus, select:focus, textarea:focus {
   outline: none;
-  input:focus, select:focus, textarea:focus {
-    outline: none;
-    border-color: #2563eb;
-    box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
-  }
-  border-color: #667eea;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
 }
 
 textarea {
   resize: vertical;
 }
 
-.submit-button {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
-  padding: 12px 30px;
-  border-radius: 6px;
-  font-size: 16px;
-  font-weight: 600;
-  transition: transform 0.2s;
-}
-
-.submit-button:hover {
-  transform: translateY(-2px);
 .submit-button {
   background: #2563eb;
   color: white;
@@ -691,7 +648,6 @@ textarea {
 .submit-button:hover {
   background: #1d4ed8;
   transform: translateY(-1px);
-}
 }
 
 .success-message {
@@ -778,22 +734,90 @@ textarea {
 
 .download-link {
   display: inline-block;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #2563eb;
   color: white;
   padding: 8px 16px;
   border-radius: 6px;
   text-decoration: none;
   font-size: 14px;
   font-weight: 600;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: background 0.2s, transform 0.15s;
+  border: none;
+  cursor: pointer;
 }
 
 .download-link:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  background: #1d4ed8;
+  transform: translateY(-1px);
 }
 
 .download-link:active {
   transform: translateY(0);
+}
+
+.document-description {
+  color: #666;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+@media (max-width: 768px) {
+  .main-content {
+    padding: 16px 12px;
+  }
+
+  .tabs {
+    gap: 6px;
+  }
+
+  .tab-button {
+    padding: 10px 12px;
+    font-size: 14px;
+    flex: 1;
+    text-align: center;
+    min-width: 0;
+  }
+
+  .tab-content {
+    padding: 16px;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .appointment-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .document-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .document-date {
+    font-size: 12px;
+  }
+
+  .appointment-form {
+    max-width: 100%;
+  }
+
+  .submit-button {
+    width: 100%;
+  }
+
+  .appointment-card {
+    padding: 14px;
+  }
+
+  .document-card {
+    padding: 14px;
+  }
 }
 </style>

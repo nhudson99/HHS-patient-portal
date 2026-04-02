@@ -748,9 +748,9 @@ onMounted(() => {
   background: white;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  overflow: hidden;
-  max-height: 70vh;
+  overflow-x: clip;
   overflow-y: auto;
+  max-height: 70vh;
   margin: 0 2rem 2rem 2rem;
 }
 
@@ -1167,17 +1167,52 @@ onMounted(() => {
 @media (max-width: 768px) {
   .dashboard-header {
     flex-direction: column;
-    gap: 1rem;
+    gap: 0.75rem;
+    padding: 1rem;
   }
 
   .controls {
     flex-direction: column;
     width: 100%;
+    gap: 0.75rem;
   }
 
-  .week-grid {
-    grid-template-columns: repeat(7, 1fr);
-    gap: 0.25rem;
+  .view-switcher {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .view-btn {
+    flex: 1;
+    text-align: center;
+  }
+
+  .date-navigation {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.4rem;
+  }
+
+  .current-date {
+    min-width: unset;
+    width: 100%;
+    text-align: center;
+    font-size: 0.9rem;
+    order: -1;
+  }
+
+  .calendar-container {
+    margin: 0 0.75rem 1.5rem;
+    overflow-x: auto;
+    max-height: none;
+  }
+
+  .week-view,
+  .month-view,
+  .day-view {
+    min-width: 640px;
+    max-height: none;
   }
 
   .modal {
