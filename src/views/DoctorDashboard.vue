@@ -45,7 +45,7 @@
         </div>
         <div class="day-grid" @contextmenu.prevent>
           <div 
-            v-for="hour in 24"
+            v-for="hour in Array.from({ length: 24 }, (_, i) => i)"
             :key="`hour-${hour}`"
             class="hour-slot"
             @click="selectTimeSlot(hour, 0)"
@@ -91,7 +91,7 @@
             <div 
               class="day-events"
               @click="selectDay(day)"
-              @contextmenu.prevent="showContextMenuForNewEvent($event)"
+                @contextmenu.prevent="showContextMenuForNewEvent($event, day)"
             >
               <div 
                 v-for="event in getEventsForDate(day)"
@@ -131,7 +131,7 @@
             class="calendar-day"
             :class="{ 'other-month': day.getMonth() !== currentDate.getMonth(), 'today': isToday(day) }"
             @click="selectDay(day)"
-            @contextmenu.prevent="showContextMenuForNewEvent($event)"
+            @contextmenu.prevent="showContextMenuForNewEvent($event, day)"
           >
             <div class="day-number">{{ day.getDate() }}</div>
             <div class="day-events">
@@ -477,8 +477,11 @@ function showEventContextMenu(e: MouseEvent, event: Event) {
   showContextMenu.value = true
 }
 
-function showContextMenuForNewEvent(e: MouseEvent) {
+function showContextMenuForNewEvent(e: MouseEvent, day?: Date) {
   e.preventDefault()
+  if (day) {
+    currentDate.value = day
+  }
   contextEvent.value = null
   contextMenuX.value = e.clientX
   contextMenuY.value = e.clientY

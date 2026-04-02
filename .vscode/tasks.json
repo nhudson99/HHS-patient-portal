@@ -1,0 +1,51 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Sonar: Up",
+      "type": "shell",
+      "command": "npm run sonar:up",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Sonar: Status",
+      "type": "shell",
+      "command": "npm run sonar:status",
+      "problemMatcher": []
+    },
+    {
+      "label": "Sonar: Scan",
+      "type": "shell",
+      "command": "npm run sonar:scan",
+      "problemMatcher": []
+    },
+    {
+      "label": "Sonar: Full (tests + scan)",
+      "type": "shell",
+      "command": "npm run sonar:full",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Quality: Frontend Build",
+      "type": "shell",
+      "command": "npm run build",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Quality: Backend Compile",
+      "type": "shell",
+      "command": "python3 -m compileall api -q",
+      "problemMatcher": []
+    },
+    {
+      "label": "Quality: Unit Regression",
+      "type": "shell",
+      "command": "npm run test:unit",
+      "group": "test",
+      "problemMatcher": []
+    }
+  ]
+}

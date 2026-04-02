@@ -110,7 +110,9 @@ def get_events():
                 'event_type': 'appointment',
                 'title': f"{apt.get('patient_name', 'Patient')} ({apt['status']})",
                 'description': apt.get('reason', ''),
-                'event_date': apt['appointment_date'].isoformat() if isinstance(apt['appointment_date'], (date, datetime)) else apt['appointment_date'],
+                # Use only the DATE portion so getEventsForDate() comparison (YYYY-MM-DD) works.
+                # start_time carries the time portion separately.
+                'event_date': apt['appointment_date'].strftime('%Y-%m-%d') if isinstance(apt['appointment_date'], datetime) else (apt['appointment_date'].isoformat() if isinstance(apt['appointment_date'], date) else str(apt['appointment_date'])[:10]),
                 'start_time': start_time,
                 'end_time': None,
                 'color': status_colors.get(apt['status'], '#3b82f6'),

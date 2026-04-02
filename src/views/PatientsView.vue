@@ -6,6 +6,7 @@
           <h2>All Patients</h2>
           <span class="count">{{ patients.length }}</span>
         </div>
+  <button class="add-patient-btn" @click="showAddPatientModal = true">+ New Patient</button>
 
         <div v-if="loading" class="state">Loading patients...</div>
         <div v-else-if="error" class="state error">{{ error }}</div>
@@ -152,6 +153,63 @@
       </section>
     </div>
 
+    <!-- Add Patient Modal -->
+    <div v-if="showAddPatientModal" class="modal-overlay" @click="showAddPatientModal = false">
+      <div class="modal" @click.stop>
+        <div class="modal-header">
+          <h2>Add New Patient</h2>
+          <button class="close-btn" @click="showAddPatientModal = false">✕</button>
+        </div>
+        <div class="modal-content">
+          <div v-if="addPatientError" class="error-banner">{{ addPatientError }}</div>
+          <div v-if="addPatientSuccess" class="success-banner">
+            Patient created. Temporary password: <strong>{{ newPatientPassword }}</strong>
+            <br /><small>Share this with the patient — they will be prompted to change it on first login.</small>
+          </div>
+          <template v-if="!addPatientSuccess">
+            <div class="form-row">
+              <div class="form-group">
+                <label>First Name *</label>
+                <input v-model="addPatientForm.firstName" type="text" placeholder="First name" />
+              </div>
+              <div class="form-group">
+                <label>Last Name *</label>
+                <input v-model="addPatientForm.lastName" type="text" placeholder="Last name" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Username *</label>
+              <input v-model="addPatientForm.username" type="text" placeholder="Portal login username" />
+            </div>
+            <div class="form-group">
+              <label>Email *</label>
+              <input v-model="addPatientForm.email" type="email" placeholder="Patient email" />
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Date of Birth</label>
+                <input v-model="addPatientForm.dateOfBirth" type="date" />
+              </div>
+              <div class="form-group">
+                <label>Phone</label>
+                <input v-model="addPatientForm.phone" type="tel" placeholder="Phone number" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Address</label>
+              <input v-model="addPatientForm.address" type="text" placeholder="Street address" />
+            </div>
+          </template>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-secondary" @click="closeAddPatientModal">{{ addPatientSuccess ? 'Close' : 'Cancel' }}</button>
+          <button v-if="!addPatientSuccess" class="btn-primary" :disabled="addPatientSaving" @click="submitAddPatient">
+            {{ addPatientSaving ? 'Creating...' : 'Create Patient' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="showAddDialog" class="modal-overlay" @click="closeAddDialog">
       <div class="modal" @click.stop>
         <div class="modal-header">
@@ -192,7 +250,7 @@
       </div>
     </div>
 
-    <!-- Rename Document Modal -->
+        <!-- Rename Document Modal -->
     <div v-if="showRenameDialog" class="modal-overlay" @click="closeRenameDialog">
       <div class="modal" @click.stop>
         <div class="modal-header">
@@ -250,6 +308,61 @@ const propertyForm = ref({
   description: ''
 })
 
+// Add patient state
+const showAddPatientModal = ref(false)
+const addPatientSaving = ref(false)
+const addPatientError = ref('')
+const addPatientSuccess = ref(false)
+const newPatientPassword = ref('')
+const addPatientForm = ref({
+  firstName: '',
+  lastName: '',
+  username: '',
+  email: '',
+  dateOfBirth: '',
+  phone: '',
+  address: '',
+})
+
+function closeAddPatientModal() {
+  showAddPatientModal.value = false
+  addPatientSuccess.value = false
+  addPatientError.value = ''
+  newPatientPassword.value = ''
+  addPatientForm.value = { firstName: '', lastName: '', username: '', email: '', dateOfBirth: '', phone: '', address: '' }
+}
+
+async function submitAddPatient() {
+  addPatientError.value = ''
+  const f = addPatientForm.value
+  if (!f.firstName || !f.lastName || !f.username || !f.email) {
+    addPatientError.value = 'First name, last name, username, and email are required.'
+    return
+  }
+  addPatientSaving.value = true
+  try {
+    const response = await fetch('/api/patients', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`,
+      },
+      body: JSON.stringify(f),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      addPatientError.value = data.error || 'Failed to create patient.'
+      return
+    }
+    newPatientPassword.value = data.temporaryPassword || ''
+    addPatientSuccess.value = true
+    await loadPatients()
+  } catch {
+    addPatientError.value = 'Network error while creating patient.'
+  } finally {
+    addPatientSaving.value = false
+  }
+}
 // Documents state
 const documents = ref<PatientDocument[]>([])
 const documentsLoading = ref(false)
@@ -840,6 +953,44 @@ function formatFileSize(bytes: number): string {
   color: #4338ca;
   border-radius: 6px;
   padding: 0.4rem 0.8rem;
+
+  .add-patient-btn {
+    display: block;
+    width: calc(100% - 2rem);
+    margin: 0.75rem 1rem 0;
+    padding: 0.55rem 1rem;
+    background: #4f46e5;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .add-patient-btn:hover {
+    background: #4338ca;
+  }
+
+  .error-banner {
+    background: #fef2f2;
+    border: 1px solid #fca5a5;
+    color: #b91c1c;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+  }
+
+  .success-banner {
+    background: #f0fdf4;
+    border: 1px solid #86efac;
+    color: #166534;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+    line-height: 1.6;
+  }
   font-weight: 600;
   cursor: pointer;
 }

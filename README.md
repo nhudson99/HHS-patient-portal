@@ -250,6 +250,25 @@ npm run sonar:full
 
 If your SonarQube uses self-signed certs or custom scanner options, pass them via your scanner environment/CLI as needed.
 
+### VS Code quick-run Sonar workflow
+
+This repo now includes ready-made VS Code tasks in `.vscode/tasks.json` so you can run Sonar without memorizing commands.
+
+1. Open Command Palette and run `Tasks: Run Task`.
+2. Choose one of:
+	- `Sonar: Up`
+	- `Sonar: Status`
+	- `Sonar: Scan`
+	- `Sonar: Full (tests + scan)`
+3. Review scanner output in the terminal panel, then open your SonarQube project Issues page to triage findings.
+
+For code-quality fallback checks when Sonar for IDE is unavailable, run:
+
+```bash
+npm run build
+python3 -m compileall api -q
+```
+
 ### Final manual steps in SonarQube UI
 
 After `npm run sonar:up`, complete these once:
