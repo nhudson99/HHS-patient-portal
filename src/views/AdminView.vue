@@ -1077,12 +1077,25 @@ async function signIn() {
 
 @media (max-width: 768px) {
   .admin-main {
-    padding: 20px 12px;
+    padding: 16px 12px;
   }
 
   .admin-login-card {
     padding: 32px 20px;
     margin: 16px;
+  }
+
+  .admin-welcome h2 {
+    font-size: 20px;
+  }
+
+  .admin-tabs {
+    flex-wrap: wrap;
+  }
+
+  .tab-btn {
+    flex: 1;
+    text-align: center;
   }
 
   .form-grid {
@@ -1099,8 +1112,13 @@ async function signIn() {
     gap: 8px;
   }
 
-  .admin-tabs {
-    flex-wrap: wrap;
+  .section-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .entity-form {
+    padding: 12px;
   }
 
   .entity-table th,

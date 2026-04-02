@@ -3,7 +3,9 @@
     <header v-if="showHeader" class="top-header">
       <div class="header-content">
         <h1>🏥 {{ pageTitle }}</h1>
-        <div class="user-actions">
+
+        <!-- Desktop nav -->
+        <div class="user-actions desktop-nav">
           <RouterLink
             v-for="button in navButtons"
             :key="button.to"
@@ -23,6 +25,39 @@
           <span class="user-name">{{ userName }}</span>
           <button @click="handleLogout" class="logout-btn">Logout</button>
         </div>
+
+        <!-- Mobile hamburger -->
+        <button
+          class="hamburger-btn"
+          :class="{ open: mobileMenuOpen }"
+          @click="mobileMenuOpen = !mobileMenuOpen"
+          aria-label="Toggle navigation menu"
+        >
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+      </div>
+
+      <!-- Mobile dropdown menu -->
+      <div v-if="mobileMenuOpen" class="mobile-nav" @click="mobileMenuOpen = false">
+        <RouterLink
+          v-for="button in navButtons"
+          :key="button.to"
+          :to="button.to"
+          class="mobile-nav-link"
+        >
+          {{ button.label }}
+        </RouterLink>
+        <button
+          v-if="showFeatureRequestButton"
+          @click="openFeatureRequestModal"
+          class="mobile-nav-link mobile-nav-btn"
+        >
+          FEATURE REQUEST
+        </button>
+        <div v-if="userName" class="mobile-nav-user">Signed in as {{ userName }}</div>
+        <button @click="handleLogout" class="mobile-nav-link mobile-nav-logout">Logout</button>
       </div>
     </header>
     <div v-if="showFeatureRequestModal" class="modal-overlay" @click="closeFeatureRequestModal">
@@ -84,6 +119,7 @@ const route = useRoute()
 const router = useRouter()
 const currentUser = ref<{ name?: string; username?: string; role?: string } | null>(null)
 const showFeatureRequestModal = ref(false)
+const mobileMenuOpen = ref(false)
 const featureRequestDescription = ref('')
 const featureRequestError = ref('')
 const featureRequestSuccess = ref(false)
@@ -237,6 +273,7 @@ watch(
   () => route.fullPath,
   () => {
     loadUser()
+    mobileMenuOpen.value = false
   }
 )
 </script>
@@ -283,16 +320,16 @@ body {
   white-space: nowrap;
 }
 
+/* ── Desktop nav ────────────────────────────────────────────────────────── */
 .user-actions {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  flex-wrap: wrap;
-  justify-content: flex-end;
 }
 
 .user-name {
   font-weight: 600;
+  color: rgba(255,255,255,0.9);
 }
 
 .header-btn {
@@ -356,6 +393,7 @@ body {
   font-size: 0.78rem;
   letter-spacing: 0.04em;
   transition: background 0.2s;
+  cursor: pointer;
 }
 
 .feature-request-btn:hover {
@@ -363,6 +401,95 @@ body {
   color: #fff;
 }
 
+/* ── Hamburger button (hidden on desktop) ──────────────────────────────── */
+.hamburger-btn {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  width: 40px;
+  height: 40px;
+  padding: 8px;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.hamburger-btn span {
+  display: block;
+  height: 2px;
+  background: white;
+  border-radius: 2px;
+  transition: transform 0.2s, opacity 0.2s;
+}
+
+.hamburger-btn.open span:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+.hamburger-btn.open span:nth-child(2) {
+  opacity: 0;
+}
+.hamburger-btn.open span:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
+/* ── Mobile nav dropdown ───────────────────────────────────────────────── */
+.mobile-nav {
+  display: none;
+  flex-direction: column;
+  background: #162f4d;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  padding: 0.5rem 0;
+}
+
+.mobile-nav-link {
+  display: block;
+  padding: 0.85rem 1.5rem;
+  color: rgba(255,255,255,0.85);
+  text-decoration: none;
+  font-size: 1rem;
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.mobile-nav-link:hover,
+.mobile-nav-link.router-link-active {
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+}
+
+.mobile-nav-btn {
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  color: rgba(255,255,255,0.7);
+}
+
+.mobile-nav-user {
+  padding: 0.5rem 1.5rem;
+  font-size: 0.85rem;
+  color: rgba(255,255,255,0.45);
+  border-top: 1px solid rgba(255,255,255,0.08);
+  margin-top: 0.25rem;
+}
+
+.mobile-nav-logout {
+  color: #fca5a5;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  margin-top: 0.25rem;
+}
+
+.mobile-nav-logout:hover {
+  background: rgba(239,68,68,0.15);
+  color: #fca5a5;
+}
+
+/* ── Modal ─────────────────────────────────────────────────────────────── */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -371,12 +498,13 @@ body {
   justify-content: center;
   align-items: center;
   z-index: 2000;
+  padding: 1rem;
 }
 
 .modal {
   background: white;
   border-radius: 8px;
-  width: 90%;
+  width: 100%;
   max-width: 560px;
   max-height: 90vh;
   overflow-y: auto;
@@ -517,44 +645,36 @@ input, select, textarea {
   font-family: inherit;
 }
 
+/* ── Mobile breakpoints ────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .header-content {
-    padding: 0.6rem 1rem;
-    flex-wrap: wrap;
+    padding: 0.65rem 1rem;
   }
 
   .header-content h1 {
     font-size: 1.1rem;
   }
 
-  .user-actions {
-    gap: 0.4rem;
-  }
-
-  .header-btn,
-  .logout-btn,
-  .feature-request-btn {
-    padding: 0.35rem 0.6rem;
-    font-size: 0.8rem;
-  }
-
-  .user-name {
-    font-size: 0.85rem;
-  }
-}
-
-@media (max-width: 480px) {
-  .header-content {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .user-actions {
-    width: 100%;
-  }
-
-  .user-name {
+  .desktop-nav {
     display: none;
+  }
+
+  .hamburger-btn {
+    display: flex;
+  }
+
+  .mobile-nav {
+    display: flex;
+  }
+
+  .modal-actions {
+    flex-direction: column;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    width: 100%;
+    text-align: center;
   }
 }
 </style>

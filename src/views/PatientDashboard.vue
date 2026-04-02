@@ -771,10 +771,11 @@ textarea {
   }
 
   .tab-button {
-    padding: 10px 14px;
+    padding: 10px 12px;
     font-size: 14px;
     flex: 1;
     text-align: center;
+    min-width: 0;
   }
 
   .tab-content {
@@ -790,6 +791,7 @@ textarea {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
+    margin-bottom: 10px;
   }
 
   .document-header {
@@ -808,6 +810,14 @@ textarea {
 
   .submit-button {
     width: 100%;
+  }
+
+  .appointment-card {
+    padding: 14px;
+  }
+
+  .document-card {
+    padding: 14px;
   }
 }
 </style>

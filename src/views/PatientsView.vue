@@ -953,46 +953,47 @@ function formatFileSize(bytes: number): string {
   color: #4338ca;
   border-radius: 6px;
   padding: 0.4rem 0.8rem;
-
-  .add-patient-btn {
-    display: block;
-    width: calc(100% - 2rem);
-    margin: 0.75rem 1rem 0;
-    padding: 0.55rem 1rem;
-    background: #4f46e5;
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 0.9rem;
-    cursor: pointer;
-    transition: background 0.2s;
-  }
-  .add-patient-btn:hover {
-    background: #4338ca;
-  }
-
-  .error-banner {
-    background: #fef2f2;
-    border: 1px solid #fca5a5;
-    color: #b91c1c;
-    border-radius: 6px;
-    padding: 0.75rem 1rem;
-    margin-bottom: 1rem;
-    font-size: 0.9rem;
-  }
-
-  .success-banner {
-    background: #f0fdf4;
-    border: 1px solid #86efac;
-    color: #166534;
-    border-radius: 6px;
-    padding: 0.75rem 1rem;
-    font-size: 0.9rem;
-    line-height: 1.6;
-  }
   font-weight: 600;
   cursor: pointer;
+}
+
+.add-patient-btn {
+  display: block;
+  width: calc(100% - 2rem);
+  margin: 0.75rem 1rem 0;
+  padding: 0.55rem 1rem;
+  background: #4f46e5;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.add-patient-btn:hover {
+  background: #4338ca;
+}
+
+.error-banner {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #b91c1c;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.success-banner {
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  color: #166534;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  line-height: 1.6;
 }
 
 .accordion {
@@ -1259,6 +1260,10 @@ function formatFileSize(bytes: number): string {
   .content.split {
     grid-template-columns: 1fr;
   }
+
+  .patient-detail {
+    padding: 1rem;
+  }
 }
 
 @media (max-width: 600px) {
@@ -1267,8 +1272,19 @@ function formatFileSize(bytes: number): string {
     gap: 0.75rem;
   }
 
+  .detail-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
   .detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .add-patient-btn {
+    width: 100%;
+    margin: 0.75rem 0 0;
   }
 }
 </style>
