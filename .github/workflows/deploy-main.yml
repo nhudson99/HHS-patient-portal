@@ -103,7 +103,7 @@ jobs:
           DOCUMENTS_BLOB_ENDPOINT=${{ secrets.DOCUMENTS_BLOB_ENDPOINT }}
           DOCUMENTS_BLOB_CREDENTIAL=${{ secrets.DOCUMENTS_BLOB_CREDENTIAL }}
           DOCUMENTS_BLOB_CONNECTION_STRING=${{ secrets.DOCUMENTS_BLOB_CONNECTION_STRING }}
-          CHECKIN_ALERT_EMAIL=${{ vars.CHECKIN_ALERT_EMAIL || 'nathan@hudsonitconsulting.com' }}
+          CHECKIN_ALERT_EMAIL=${{ vars.CHECKIN_ALERT_EMAIL || 'Sigma@SigmaMHUC.com' }}
           GRAPH_TENANT_ID=${{ secrets.GRAPH_TENANT_ID || secrets.AZURE_TENANT_ID }}
           GRAPH_CLIENT_ID=${{ secrets.GRAPH_CLIENT_ID || secrets.AZURE_CLIENT_ID }}
           GRAPH_CLIENT_SECRET=${{ secrets.GRAPH_CLIENT_SECRET }}

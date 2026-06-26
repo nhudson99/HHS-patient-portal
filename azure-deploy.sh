@@ -221,7 +221,7 @@ if [[ "$APP_EXISTS" != "true" ]]; then
       DOCUMENTS_STORAGE_BACKEND="${DOCUMENTS_STORAGE_BACKEND:-azure_blob}" \
       DOCUMENTS_LOCAL_DIR="${DOCUMENTS_LOCAL_DIR:-/tmp/hhs-documents}" \
       DOCUMENTS_BLOB_CONTAINER="${DOCUMENTS_BLOB_CONTAINER:-hhs-documents}" \
-      CHECKIN_ALERT_EMAIL="${CHECKIN_ALERT_EMAIL:-nathan@hudsonitconsulting.com}" \
+      CHECKIN_ALERT_EMAIL="${CHECKIN_ALERT_EMAIL:-Sigma@SigmaMHUC.com}" \
       GRAPH_TENANT_ID="${GRAPH_TENANT_ID:-$AZURE_TENANT_ID}" \
       GRAPH_CLIENT_ID="${GRAPH_CLIENT_ID:-$AZURE_CLIENT_ID}" \
       GRAPH_SENDER_USER="${GRAPH_SENDER_USER:-}" \
@@ -268,7 +268,7 @@ else
       DOCUMENTS_BLOB_ENDPOINT=secretref:documents-blob-endpoint \
       DOCUMENTS_BLOB_CREDENTIAL=secretref:documents-blob-credential \
       DOCUMENTS_BLOB_CONNECTION_STRING=secretref:documents-blob-connection-string \
-      CHECKIN_ALERT_EMAIL="${CHECKIN_ALERT_EMAIL:-nathan@hudsonitconsulting.com}" \
+      CHECKIN_ALERT_EMAIL="${CHECKIN_ALERT_EMAIL:-Sigma@SigmaMHUC.com}" \
       GRAPH_TENANT_ID="${GRAPH_TENANT_ID:-$AZURE_TENANT_ID}" \
       GRAPH_CLIENT_ID="${GRAPH_CLIENT_ID:-$AZURE_CLIENT_ID}" \
       GRAPH_SENDER_USER="${GRAPH_SENDER_USER:-}" \

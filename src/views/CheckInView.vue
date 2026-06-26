@@ -106,10 +106,7 @@
       <div v-if="checkedIn" class="confirmation">
         <div class="success-icon">✓</div>
         <h2>Check-In Successful!</h2>
-        <p class="confirmation-message">
-          <template v-if="appointmentInfo">You are checked in for your appointment.</template>
-          <template v-else>We could not find your appointment on file. A staff member has been notified and will assist you shortly.</template>
-        </p>
+        <p class="confirmation-message">You are checked in for your appointment.</p>
 
         <div v-if="appointmentInfo" class="appointment-details">
           <div class="detail-row">
