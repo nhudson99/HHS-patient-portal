@@ -7,7 +7,7 @@ Out of the box Hudson Health System Patient Portal
 - Set strong `SESSION_SECRET` and `JWT_SECRET` (64+ random bytes).
 - Configure `ALLOWED_ORIGINS` to exact production domains only.
 - For multi-replica deployments, set `RATELIMIT_STORAGE_URI` to Redis instead of `memory://`.
-- Keep `FORCE_HTTPS=false` in Azure Container Apps if TLS terminates at ingress.
+- Keep `FORCE_HTTPS=true` in production and deploy Container Apps ingress with `--allow-insecure false`.
 - Store sensitive values in Azure secrets; never commit `.env`.
 
 ## HIPAA compliance and security review
@@ -285,4 +285,3 @@ After `npm run sonar:up`, complete these once:
 
 - `SONAR_HOST_URL`
 - `SONAR_TOKEN`
-

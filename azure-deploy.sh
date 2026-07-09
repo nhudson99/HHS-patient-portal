@@ -52,6 +52,16 @@ for key in "${required_env[@]}"; do
   fi
 done
 
+IFS=',' read -r -a origin_array <<< "$ALLOWED_ORIGINS"
+for origin in "${origin_array[@]}"; do
+  trimmed_origin="$(echo "$origin" | xargs)"
+  if [[ "$trimmed_origin" == http://* ]]; then
+    echo "❌ Insecure origin detected in ALLOWED_ORIGINS: $trimmed_origin"
+    echo "   Use HTTPS origins only for Azure deployment."
+    exit 1
+  fi
+done
+
 if ! az extension show --name containerapp >/dev/null 2>&1; then
   az extension add --name containerapp >/dev/null
 else
@@ -196,7 +206,7 @@ if [[ "$APP_EXISTS" != "true" ]]; then
     --env-vars \
       FLASK_ENV=production \
       NODE_ENV=production \
-      FORCE_HTTPS="${FORCE_HTTPS:-false}" \
+      FORCE_HTTPS="${FORCE_HTTPS:-true}" \
       PORT=3000 \
       PYTHONPATH=/app \
       API_UPSTREAM="http://127.0.0.1:3000" \
@@ -234,7 +244,8 @@ if [[ "$APP_EXISTS" != "true" ]]; then
       SMTP_PASSWORD=secretref:smtp-password \
       GITHUB_TOKEN=secretref:github-token \
       AZURE_TENANT_ID="$AZURE_TENANT_ID" \
-      AZURE_CLIENT_ID="$AZURE_CLIENT_ID" >/dev/null
+      AZURE_CLIENT_ID="$AZURE_CLIENT_ID" \
+    --allow-insecure false >/dev/null
 else
   az containerapp update \
     --name "$AZ_API_APP_NAME" \
@@ -243,7 +254,7 @@ else
     --set-env-vars \
       FLASK_ENV=production \
       NODE_ENV=production \
-      FORCE_HTTPS="${FORCE_HTTPS:-false}" \
+      FORCE_HTTPS="${FORCE_HTTPS:-true}" \
       PORT=3000 \
       PYTHONPATH=/app \
       API_UPSTREAM="http://127.0.0.1:3000" \
@@ -323,6 +334,14 @@ else
       SMTP_PASSWORD=secretref:smtp-password \
       GITHUB_TOKEN=secretref:github-token >/dev/null
 fi
+
+az containerapp ingress update \
+  --name "$AZ_API_APP_NAME" \
+  --resource-group "$AZ_RESOURCE_GROUP" \
+  --type external \
+  --target-port 80 \
+  --transport http \
+  --allow-insecure false >/dev/null
 
 API_FQDN="$(az containerapp show --name "$AZ_API_APP_NAME" --resource-group "$AZ_RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)"
 

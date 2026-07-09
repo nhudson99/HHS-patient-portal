@@ -32,48 +32,48 @@
         No appointments or events scheduled for this day.
       </div>
 
-      <div v-else class="schedule-list" @contextmenu.prevent>
-        <div v-for="event in dayEvents" :key="event.id" class="schedule-item">
-          <div class="time-column">
-            <span class="time-pill">{{ getEventTimeLabel(event) }}</span>
-          </div>
-          <div class="event-column">
-            <div class="event-topline">
-              <span class="event-dot" :style="{ backgroundColor: event.color }"></span>
-              <span class="event-title">{{ event.title }}</span>
+      <div v-else class="provider-columns" @contextmenu.prevent>
+        <div v-for="provider in providerColumns" :key="provider.key" class="provider-column">
+          <div class="provider-column-header">{{ provider.label }}</div>
+          <div class="provider-events">
+            <div v-for="event in provider.events" :key="event.id" class="schedule-item">
+              <div class="event-topline">
+                <span class="event-dot" :style="{ backgroundColor: event.color }"></span>
+                <span class="event-title">{{ event.title }}</span>
+              </div>
+              <div class="event-meta">
+                <span><strong>Time:</strong> {{ getEventTimeLabel(event) }}</span>
+                <span v-if="event.patient_name"><strong>Patient:</strong> {{ event.patient_name }}</span>
+                <span><strong>Type:</strong> {{ formatEventType(event.event_type) }}</span>
+                <span v-if="isAppointmentEvent(event) && getAppointmentStatus(event)">
+                  <strong>Status:</strong> {{ getAppointmentStatus(event) }}
+                </span>
+              </div>
+              <p v-if="event.description" class="event-description">{{ event.description }}</p>
+              <div class="actions-column">
+                <button
+                  v-if="isAppointmentEvent(event) && getAppointmentStatus(event) === 'pending'"
+                  class="confirm-btn"
+                  @click="confirmAppointment(event)"
+                >
+                  Confirm
+                </button>
+                <button
+                  v-if="!isAppointmentEvent(event)"
+                  class="btn-secondary action-btn"
+                  @click="selectEvent(event)"
+                >
+                  Edit
+                </button>
+                <button
+                  v-if="!isAppointmentEvent(event)"
+                  class="btn-danger action-btn"
+                  @click="deleteEvent(event)"
+                >
+                  Delete
+                </button>
+              </div>
             </div>
-            <div class="event-meta">
-              <span><strong>Provider:</strong> {{ event.provider_name || 'Unknown provider' }}</span>
-              <span v-if="event.patient_name"><strong>Patient:</strong> {{ event.patient_name }}</span>
-              <span><strong>Type:</strong> {{ formatEventType(event.event_type) }}</span>
-              <span v-if="isAppointmentEvent(event) && getAppointmentStatus(event)">
-                <strong>Status:</strong> {{ getAppointmentStatus(event) }}
-              </span>
-            </div>
-            <p v-if="event.description" class="event-description">{{ event.description }}</p>
-          </div>
-          <div class="actions-column">
-            <button
-              v-if="isAppointmentEvent(event) && getAppointmentStatus(event) === 'pending'"
-              class="confirm-btn"
-              @click="confirmAppointment(event)"
-            >
-              Confirm
-            </button>
-            <button
-              v-if="!isAppointmentEvent(event)"
-              class="btn-secondary action-btn"
-              @click="selectEvent(event)"
-            >
-              Edit
-            </button>
-            <button
-              v-if="!isAppointmentEvent(event)"
-              class="btn-danger action-btn"
-              @click="deleteEvent(event)"
-            >
-              Delete
-            </button>
           </div>
         </div>
       </div>
@@ -179,6 +179,12 @@ interface DashboardEvent {
   updated_at: string
 }
 
+interface ProviderColumn {
+  key: string
+  label: string
+  events: DashboardEvent[]
+}
+
 interface EventForm {
   title: string
   event_date: string
@@ -216,6 +222,33 @@ const dayEvents = computed(() => {
   return events.value
     .filter((event) => event.event_date === dateStr)
     .sort((left, right) => getSortTime(left).localeCompare(getSortTime(right)))
+})
+
+const providerColumns = computed<ProviderColumn[]>(() => {
+  const grouped = new Map<string, ProviderColumn>()
+  for (const event of dayEvents.value) {
+    const providerLabel = event.provider_name?.trim() || 'Unknown provider'
+    const providerKey = `${event.doctor_id || 'unknown'}::${providerLabel}`
+    if (!grouped.has(providerKey)) {
+      grouped.set(providerKey, {
+        key: providerKey,
+        label: providerLabel,
+        events: []
+      })
+    }
+    grouped.get(providerKey)?.events.push(event)
+  }
+
+  return Array.from(grouped.values())
+    .sort((left, right) => left.label.localeCompare(right.label))
+    .map((provider) => ({
+      ...provider,
+      events: [...provider.events].sort((left, right) => {
+        const timeCompare = getSortTime(left).localeCompare(getSortTime(right))
+        if (timeCompare !== 0) return timeCompare
+        return left.title.localeCompare(right.title)
+      })
+    }))
 })
 
 function formatDate(date: Date | string, fmt: string): string {
@@ -549,35 +582,40 @@ onMounted(() => {
   color: #6b7280;
 }
 
-.schedule-list {
+.provider-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  padding: 1rem 1.5rem 1.5rem;
+}
+
+.provider-column {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fafafa;
+  overflow: hidden;
+}
+
+.provider-column-header {
+  padding: 0.75rem 0.9rem;
+  background: #e0ecff;
+  color: #1e3a8a;
+  font-weight: 700;
+  border-bottom: 1px solid #dbeafe;
+}
+
+.provider-events {
   display: flex;
   flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
 }
 
 .schedule-item {
-  display: grid;
-  grid-template-columns: 140px 1fr auto;
-  gap: 1rem;
-  padding: 1rem 1.5rem;
-  border-bottom: 1px solid #f1f5f9;
-}
-
-.schedule-item:last-child {
-  border-bottom: none;
-}
-
-.time-column {
-  display: flex;
-  align-items: center;
-}
-
-.time-pill {
-  background: #eff6ff;
-  color: #1d4ed8;
-  border-radius: 999px;
-  padding: 0.35rem 0.75rem;
-  font-size: 0.85rem;
-  font-weight: 600;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  padding: 0.75rem;
 }
 
 .event-topline {
@@ -615,7 +653,9 @@ onMounted(() => {
 .actions-column {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.5rem;
+  margin-top: 0.65rem;
 }
 
 .action-btn,
@@ -772,8 +812,9 @@ onMounted(() => {
 }
 
 @media (max-width: 900px) {
-  .schedule-item {
+  .provider-columns {
     grid-template-columns: 1fr;
+    padding: 0.75rem 1rem 1rem;
   }
 
   .actions-column {

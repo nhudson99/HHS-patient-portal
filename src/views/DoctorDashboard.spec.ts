@@ -87,10 +87,13 @@ describe('DoctorDashboard.vue', () => {
     const wrapper = mount(DoctorDashboard)
     await flushPromises()
 
+    const providerColumns = wrapper.findAll('.provider-column')
+    expect(providerColumns.length).toBe(2)
+    const headers = wrapper.findAll('.provider-column-header').map((node) => node.text())
+    expect(headers).toEqual(['Dr. Alice Smith', 'Dr. Bob Jones'])
+
     const items = wrapper.findAll('.schedule-item')
     expect(items.length).toBe(2)
-    expect(wrapper.text()).toContain('Dr. Alice Smith')
-    expect(wrapper.text()).toContain('Dr. Bob Jones')
     expect(wrapper.text()).toContain('Confirm')
     expect(wrapper.text()).not.toContain('Future Event')
   })
