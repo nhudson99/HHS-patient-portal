@@ -42,6 +42,30 @@ services:
       - hhs-network
     restart: unless-stopped
 
+  # Database bootstrap (idempotent schema + seed for local dev)
+  db-init:
+    image: postgres:16-alpine
+    container_name: hhs-db-init
+    environment:
+      PGPASSWORD: ${DB_PASSWORD:-postgres}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-hhs_patient_portal}
+      DB_USER: ${DB_USER:-postgres}
+    volumes:
+      - ./server/db:/schema:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "
+      psql -h $$DB_HOST -p $$DB_PORT -U $$DB_USER -d $$DB_NAME -v ON_ERROR_STOP=1 -f /schema/schema.sql &&
+      psql -h $$DB_HOST -p $$DB_PORT -U $$DB_USER -d $$DB_NAME -v ON_ERROR_STOP=1 -f /schema/seed.sql
+      "
+    networks:
+      - hhs-network
+    restart: "no"
+
   # API Backend
   api:
     build:
@@ -95,6 +119,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s

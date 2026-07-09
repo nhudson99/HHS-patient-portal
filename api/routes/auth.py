@@ -5,14 +5,14 @@ Handles user registration, login, logout, and password management
 
 from flask import Blueprint, request, jsonify
 from flask import current_app
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 import bcrypt
+from psycopg2 import errors as pg_errors
 
 from api.db.connection import execute_query
 from api.utils.security import (
-    generate_salt, hash_password, verify_password,
-    verify_client_hashed_password, validate_password_strength
+    verify_password, validate_password_strength
 )
 from api.utils.session_manager import (
     create_session, invalidate_session, invalidate_all_user_sessions
@@ -25,6 +25,85 @@ from api.middleware.auth import authenticate, check_account_lock
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 BCRYPT_ROUNDS = int(os.getenv('BCRYPT_ROUNDS', 12))
+IS_PRODUCTION = os.getenv('NODE_ENV') == 'production'
+
+
+def _is_bcrypt_salt(value):
+    """Return True when value looks like a bcrypt salt prefix."""
+    return (
+        isinstance(value, str) and
+        len(value) >= 29 and
+        (value.startswith('$2a$') or value.startswith('$2b$') or value.startswith('$2y$'))
+    )
+
+
+def _is_undefined_column_error(exc):
+    return isinstance(exc, pg_errors.UndefinedColumn)
+
+
+def _fetch_login_user(username):
+    query = """
+        SELECT id, username, email, role, password_hash, salt,
+               failed_login_attempts, account_locked_until, is_active,
+               password_last_changed, must_change_password
+        FROM users
+        WHERE username = %s
+    """
+    try:
+        user = execute_query(query, (username,), fetch_one=True)
+        if user:
+            user = dict(user)
+            user['_supports_lockout_columns'] = True
+        return user
+    except Exception as exc:
+        if not _is_undefined_column_error(exc):
+            raise
+        current_app.logger.warning(
+            "Users table missing one or more auth columns during login; using compatibility query"
+        )
+        fallback_query = """
+            SELECT id, username, email, role, password_hash, salt
+            FROM users
+            WHERE username = %s
+        """
+        user = execute_query(fallback_query, (username,), fetch_one=True)
+        if not user:
+            return None
+        user = dict(user)
+        user['failed_login_attempts'] = 0
+        user['account_locked_until'] = None
+        user['is_active'] = True
+        user['password_last_changed'] = None
+        user['must_change_password'] = False
+        user['_supports_lockout_columns'] = False
+        return user
+
+
+def _verify_login_password(submitted_password, user):
+    stored_hash = user.get('password_hash')
+    if not stored_hash:
+        return False
+
+    try:
+        if bcrypt.checkpw(submitted_password.encode('utf-8'), stored_hash.encode('utf-8')):
+            return True
+    except ValueError:
+        current_app.logger.warning("Invalid stored bcrypt hash format for user %s", user.get('username'))
+
+    stored_salt = user.get('salt')
+    if stored_salt and not _is_bcrypt_salt(stored_salt):
+        try:
+            return verify_password(submitted_password, stored_hash, stored_salt)
+        except ValueError:
+            return False
+
+    return False
+
+
+def _comparison_now(reference_dt):
+    if reference_dt and reference_dt.tzinfo and reference_dt.tzinfo.utcoffset(reference_dt) is not None:
+        return datetime.now(timezone.utc)
+    return datetime.now()
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
@@ -67,7 +146,7 @@ def register():
         salt = bcrypt.gensalt(rounds=BCRYPT_ROUNDS)
         password_hash = bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
         
-        # Store the salt as a string (the full bcrypt salt prefix needed for client-side hashing during login)
+        # Keep salt prefix for legacy compatibility with existing records.
         # Format: $2a$10$XXXXXXXXXXXXXXXX (29 characters)
         salt_str = password_hash[:29]
         
@@ -111,30 +190,11 @@ def register():
 def get_salt():
     """
     POST /api/auth/salt
-    Get the salt for a username (for client-side password hashing)
-    This endpoint is intentionally public to allow login-time salt retrieval
+    Deprecated endpoint retained for backwards compatibility.
     """
-    try:
-        data = request.get_json(silent=True) or {}
-        
-        if not data or 'username' not in data:
-            return jsonify({'error': 'Username required'}), 400
-        
-        username = data['username']
-        
-        # Get user's salt
-        user_query = "SELECT salt FROM users WHERE username = %s AND is_active = true"
-        user = execute_query(user_query, (username,), fetch_one=True)
-        
-        if not user or not user.get('salt'):
-            dummy_salt = bcrypt.gensalt(rounds=BCRYPT_ROUNDS).decode('utf-8')
-            return jsonify({'salt': dummy_salt}), 200
-
-        return jsonify({'salt': user['salt']}), 200
-        
-    except Exception as e:
-        current_app.logger.exception("Salt retrieval error")
-        return jsonify({'error': 'Salt retrieval failed'}), 500
+    return jsonify({
+        'error': 'Salt endpoint is deprecated. Submit plaintext password over TLS to /api/auth/login.'
+    }), 410
 
 @auth_bp.route('/login', methods=['POST'])
 @check_account_lock
@@ -153,14 +213,7 @@ def login():
         password = data['password']
         
         # Get user
-        user_query = """
-            SELECT id, username, email, role, password_hash, salt, 
-                   failed_login_attempts, account_locked_until, is_active,
-                   password_last_changed, must_change_password
-            FROM users 
-            WHERE username = %s
-        """
-        user = execute_query(user_query, (username,), fetch_one=True)
+        user = _fetch_login_user(username)
         
         if not user:
             log_login(None, username, False, request)
@@ -171,64 +224,68 @@ def login():
             log_login(user['id'], username, False, request)
             return jsonify({'error': 'Account is inactive'}), 403
         
-        # Verify password - since client sends pre-hashed password, compare directly
-        # Client sends bcryptjs hash, we stored it directly, so they should match
-        valid_password = verify_client_hashed_password(password, user['password_hash'])
+        # Verify password server-side (industry-standard pattern over TLS).
+        valid_password = _verify_login_password(password, user)
         
         if not valid_password:
-            # Increment failed login attempts
-            max_attempts = int(os.getenv('MAX_LOGIN_ATTEMPTS', 5))
-            lockout_minutes = int(os.getenv('ACCOUNT_LOCKOUT_MINUTES', 30))
-            new_attempts = (user['failed_login_attempts'] or 0) + 1
-            
-            if new_attempts >= max_attempts:
-                lockout_until = datetime.now() + timedelta(minutes=lockout_minutes)
-                
+            if user.get('_supports_lockout_columns'):
+                # Increment failed login attempts
+                max_attempts = int(os.getenv('MAX_LOGIN_ATTEMPTS', 5))
+                lockout_minutes = int(os.getenv('ACCOUNT_LOCKOUT_MINUTES', 30))
+                new_attempts = (user['failed_login_attempts'] or 0) + 1
+
+                if new_attempts >= max_attempts:
+                    lockout_until = datetime.now() + timedelta(minutes=lockout_minutes)
+
+                    update_query = """
+                        UPDATE users
+                        SET failed_login_attempts = %s,
+                            account_locked_until = %s,
+                            last_failed_login = NOW()
+                        WHERE id = %s
+                    """
+                    execute_query(update_query, (new_attempts, lockout_until, user['id']))
+
+                    log_account_lockout(user['id'], 'Too many failed login attempts', request)
+
+                    return jsonify({
+                        'error': 'Account locked due to too many failed login attempts',
+                        'minutesLocked': lockout_minutes
+                    }), 423
+
                 update_query = """
-                    UPDATE users 
-                    SET failed_login_attempts = %s, 
-                        account_locked_until = %s, 
-                        last_failed_login = NOW()
-                    WHERE id = %s
-                """
-                execute_query(update_query, (new_attempts, lockout_until, user['id']))
-                
-                log_account_lockout(user['id'], 'Too many failed login attempts', request)
-                
-                return jsonify({
-                    'error': 'Account locked due to too many failed login attempts',
-                    'minutesLocked': lockout_minutes
-                }), 423
-            else:
-                update_query = """
-                    UPDATE users 
-                    SET failed_login_attempts = %s, 
+                    UPDATE users
+                    SET failed_login_attempts = %s,
                         last_failed_login = NOW()
                     WHERE id = %s
                 """
                 execute_query(update_query, (new_attempts, user['id']))
-                
+
                 log_login(user['id'], username, False, request)
-                
+
                 return jsonify({
                     'error': 'Invalid credentials',
                     'attemptsRemaining': max_attempts - new_attempts
                 }), 401
+
+            log_login(user['id'], username, False, request)
+            return jsonify({'error': 'Invalid credentials'}), 401
         
         # Reset failed login attempts
-        reset_query = """
-            UPDATE users 
-            SET failed_login_attempts = 0, account_locked_until = NULL, last_login = NOW()
-            WHERE id = %s
-        """
-        execute_query(reset_query, (user['id'],))
+        if user.get('_supports_lockout_columns'):
+            reset_query = """
+                UPDATE users
+                SET failed_login_attempts = 0, account_locked_until = NULL, last_login = NOW()
+                WHERE id = %s
+            """
+            execute_query(reset_query, (user['id'],))
         
         # Check if password has expired
         password_expiry_days = int(os.getenv('PASSWORD_EXPIRY_DAYS', 90))
         password_expired = False
         if user['password_last_changed']:
             expiry_date = user['password_last_changed'] + timedelta(days=password_expiry_days)
-            password_expired = datetime.now() > expiry_date
+            password_expired = _comparison_now(expiry_date) > expiry_date
         
         # Create session
         session_token = create_session(
@@ -239,7 +296,7 @@ def login():
         
         log_login(user['id'], username, True, request)
         
-        return jsonify({
+        response = jsonify({
             'message': 'Login successful',
             'sessionToken': session_token,
             'user': {
@@ -249,8 +306,24 @@ def login():
                 'role': user['role']
             },
             'requirePasswordChange': user['must_change_password'] or password_expired
-        }), 200
+        })
+        timeout_minutes = int(os.getenv('SESSION_TIMEOUT_MINUTES', 15))
+        response.set_cookie(
+            'sessionToken',
+            session_token,
+            max_age=timeout_minutes * 60,
+            httponly=True,
+            secure=IS_PRODUCTION,
+            samesite='Lax',
+            path='/'
+        )
+        return response, 200
         
+    except pg_errors.UndefinedTable:
+        current_app.logger.exception("Login failed because users table is missing")
+        return jsonify({
+            'error': 'Authentication database schema is not initialized. Run database setup and try again.'
+        }), 503
     except Exception as e:
         current_app.logger.exception("Login error")
         return jsonify({'error': 'Login failed'}), 500
@@ -269,7 +342,9 @@ def logout():
         if hasattr(request, 'user'):
             log_logout(request.user['id'], request)
         
-        return jsonify({'message': 'Logout successful'}), 200
+        response = jsonify({'message': 'Logout successful'})
+        response.delete_cookie('sessionToken', path='/')
+        return response, 200
         
     except Exception as e:
         current_app.logger.exception("Logout error")
@@ -305,8 +380,8 @@ def change_password():
         if not user:
             return jsonify({'error': 'User not found'}), 404
         
-        # Verify current password using bcrypt
-        valid_password = bcrypt.checkpw(current_password.encode('utf-8'), user['password_hash'].encode('utf-8'))
+        # Verify current password server-side to support current and legacy hashes.
+        valid_password = _verify_login_password(current_password, dict(user))
         
         if not valid_password:
             return jsonify({'error': 'Current password is incorrect'}), 401

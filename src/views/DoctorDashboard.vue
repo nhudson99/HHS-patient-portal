@@ -1,149 +1,77 @@
 <template>
   <div class="doctor-dashboard">
-    <!-- Calendar controls -->
     <div class="dashboard-header">
-      <div class="controls">
-        <div class="view-switcher">
-          <button 
-            @click="viewMode = 'day'"
-            :class="{ active: viewMode === 'day' }"
-            class="view-btn"
-          >
-            Day
-          </button>
-          <button 
-            @click="viewMode = 'week'"
-            :class="{ active: viewMode === 'week' }"
-            class="view-btn"
-          >
-            Week
-          </button>
-          <button 
-            @click="viewMode = 'month'"
-            :class="{ active: viewMode === 'month' }"
-            class="view-btn"
-          >
-            Month
-          </button>
-        </div>
-
-        <div class="date-navigation">
-          <button @click="previousPeriod" class="nav-btn">← Previous</button>
-          <button @click="goToToday" class="nav-btn">Today</button>
-          <button @click="nextPeriod" class="nav-btn">Next →</button>
-          <span class="current-date">{{ formatDateRange() }}</span>
-        </div>
+      <div class="header-main">
+        <h1>Provider Day Schedule</h1>
+        <p>All appointments and events for the selected day across providers</p>
+      </div>
+      <div class="date-navigation">
+        <button @click="previousDay" class="nav-btn">← Previous</button>
+        <button @click="goToToday" class="nav-btn">Today</button>
+        <button @click="nextDay" class="nav-btn">Next →</button>
+        <input
+          :value="selectedDate"
+          @input="onDateInput"
+          type="date"
+          class="date-input"
+          aria-label="Selected schedule day"
+        />
+        <button @click="openNewEventModal" class="btn-primary add-event-btn">Add Event</button>
       </div>
     </div>
 
-    <!-- Calendar View -->
-    <div class="calendar-container">
-      <!-- Day View -->
-      <div v-if="viewMode === 'day'" class="day-view">
-        <div class="day-header">
-          <h2>{{ formatDate(currentDate, 'EEEE, MMMM d, yyyy') }}</h2>
-        </div>
-        <div class="day-grid" @contextmenu.prevent>
-          <div 
-            v-for="hour in Array.from({ length: 24 }, (_, i) => i)"
-            :key="`hour-${hour}`"
-            class="hour-slot"
-            @click="selectTimeSlot(hour, 0)"
-            @contextmenu="showContextMenuForNewEvent($event)"
-          >
-            <div class="hour-label">{{ formatHour(hour) }}</div>
-            <div class="events-container">
-              <div 
-                v-for="event in getEventsForTime(hour)"
-                :key="event.id"
-                class="event"
-                :style="{ backgroundColor: event.color }"
-                @click.stop="selectEvent(event)"
-                @contextmenu.stop="showEventContextMenu($event, event)"
-              >
-                <div class="event-title">{{ event.title }}</div>
-                <div class="event-time">{{ event.start_time || 'All day' }}</div>
+    <div class="schedule-container">
+      <div class="schedule-header">
+        <h2>{{ formatDate(currentDate, 'EEEE, MMMM d, yyyy') }}</h2>
+      </div>
+
+      <div v-if="isLoading" class="status-message">Loading day schedule...</div>
+      <div v-else-if="loadError" class="status-message error-message">{{ loadError }}</div>
+
+      <div v-else-if="dayEvents.length === 0" class="status-message empty-message">
+        No appointments or events scheduled for this day.
+      </div>
+
+      <div v-else class="provider-columns" @contextmenu.prevent>
+        <div v-for="provider in providerColumns" :key="provider.key" class="provider-column">
+          <div class="provider-column-header">{{ provider.label }}</div>
+          <div class="provider-events">
+            <div v-for="event in provider.events" :key="event.id" class="schedule-item">
+              <div class="event-topline">
+                <span class="event-dot" :style="{ backgroundColor: event.color }"></span>
+                <span class="event-title">{{ event.title }}</span>
+              </div>
+              <div class="event-meta">
+                <span><strong>Time:</strong> {{ getEventTimeLabel(event) }}</span>
+                <span v-if="event.patient_name"><strong>Patient:</strong> {{ event.patient_name }}</span>
+                <span><strong>Type:</strong> {{ formatEventType(event.event_type) }}</span>
+                <span v-if="isAppointmentEvent(event) && getAppointmentStatus(event)">
+                  <strong>Status:</strong> {{ getAppointmentStatus(event) }}
+                </span>
+              </div>
+              <p v-if="event.description" class="event-description">{{ event.description }}</p>
+              <div class="actions-column">
                 <button
                   v-if="isAppointmentEvent(event) && getAppointmentStatus(event) === 'pending'"
                   class="confirm-btn"
-                  @click.stop="confirmAppointment(event)"
+                  @click="confirmAppointment(event)"
                 >
-                  ✓ Confirm
+                  Confirm
                 </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Week View -->
-      <div v-if="viewMode === 'week'" class="week-view">
-        <div class="week-grid">
-          <div 
-            v-for="day in getWeekDays()"
-            :key="day.toISOString()"
-            class="day-column"
-          >
-            <div class="day-header">
-              <div class="day-name">{{ formatDate(day, 'EEE') }}</div>
-              <div class="day-date">{{ formatDate(day, 'd') }}</div>
-            </div>
-            <div 
-              class="day-events"
-              @click="selectDay(day)"
-                @contextmenu.prevent="showContextMenuForNewEvent($event, day)"
-            >
-              <div 
-                v-for="event in getEventsForDate(day)"
-                :key="event.id"
-                class="event"
-                :style="{ backgroundColor: event.color }"
-                @click.stop="selectEvent(event)"
-                @contextmenu.stop="showEventContextMenu($event, event)"
-              >
-                <div class="event-title">{{ event.title }}</div>
-                <div v-if="event.start_time" class="event-time">{{ formatEventTime(event.start_time) }}</div>
                 <button
-                  v-if="isAppointmentEvent(event) && getAppointmentStatus(event) === 'pending'"
-                  class="confirm-btn"
-                  @click.stop="confirmAppointment(event)"
+                  v-if="!isAppointmentEvent(event)"
+                  class="btn-secondary action-btn"
+                  @click="selectEvent(event)"
                 >
-                  ✓ Confirm
+                  Edit
                 </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Month View -->
-      <div v-if="viewMode === 'month'" class="month-view">
-        <div class="month-header">
-          <h2>{{ formatDate(currentDate, 'MMMM yyyy') }}</h2>
-        </div>
-        <div class="calendar-grid">
-          <div class="weekday-header" v-for="day in ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']" :key="day">
-            {{ day }}
-          </div>
-          <div 
-            v-for="day in getMonthDays()"
-            :key="day.toISOString()"
-            class="calendar-day"
-            :class="{ 'other-month': day.getMonth() !== currentDate.getMonth(), 'today': isToday(day) }"
-            @click="selectDay(day)"
-            @contextmenu.prevent="showContextMenuForNewEvent($event, day)"
-          >
-            <div class="day-number">{{ day.getDate() }}</div>
-            <div class="day-events">
-              <div 
-                v-for="event in getEventsForDate(day)"
-                :key="event.id"
-                class="event"
-                :style="{ backgroundColor: event.color }"
-                @click.stop="selectEvent(event)"
-                @contextmenu.stop="showEventContextMenu($event, event)"
-              >
-                <span class="event-dot">•</span>
+                <button
+                  v-if="!isAppointmentEvent(event)"
+                  class="btn-danger action-btn"
+                  @click="deleteEvent(event)"
+                >
+                  Delete
+                </button>
               </div>
             </div>
           </div>
@@ -151,7 +79,6 @@
       </div>
     </div>
 
-    <!-- Event Modal -->
     <div v-if="showEventModal" class="modal-overlay" @click="closeEventModal">
       <div class="modal" @click.stop>
         <div class="modal-header">
@@ -208,7 +135,7 @@
           <div class="form-group">
             <label>Color</label>
             <div class="color-picker">
-              <div 
+              <div
                 v-for="color in colorOptions"
                 :key="color"
                 class="color-option"
@@ -226,55 +153,14 @@
         </div>
       </div>
     </div>
-
-    <!-- Context Menu -->
-    <div 
-      v-if="showContextMenu"
-      class="context-menu"
-      :style="{ top: contextMenuY + 'px', left: contextMenuX + 'px' }"
-    >
-      <div class="menu-item" @click="openNewEventModal">Add Event</div>
-      <div v-if="contextEvent" class="menu-divider"></div>
-      <div v-if="contextEvent" class="menu-item" @click="openEventForEdit">Edit</div>
-      <div v-if="contextEvent" class="menu-item delete" @click="confirmDeleteEvent">Delete</div>
-    </div>
-
-    <!-- Confirm Dialog -->
-    <div v-if="showConfirmDelete" class="modal-overlay" @click="showConfirmDelete = false">
-      <div class="modal small" @click.stop>
-        <div class="modal-content">
-          <p>Are you sure you want to delete this event?</p>
-          <div class="modal-actions">
-            <button @click="deleteEvent" class="btn-danger">Delete</button>
-            <button @click="showConfirmDelete = false" class="btn-secondary">Cancel</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
-import { 
-  format, 
-  startOfWeek, 
-  endOfWeek, 
-  eachDayOfInterval,
-  startOfMonth,
-  endOfMonth,
-  isToday,
-  addDays,
-  subDays,
-  addWeeks,
-  subWeeks,
-  addMonths,
-  subMonths,
-  parse
-} from 'date-fns'
+import { computed, onMounted, ref, watch } from 'vue'
+import { addDays, format, parse } from 'date-fns'
 
-interface Event {
+interface DashboardEvent {
   id: string
   doctor_id: string
   patient_id?: string
@@ -286,8 +172,17 @@ interface Event {
   end_time?: string
   color: string
   is_all_day: boolean
+  provider_name?: string
+  patient_name?: string
+  appointment_status?: string
   created_at: string
   updated_at: string
+}
+
+interface ProviderColumn {
+  key: string
+  label: string
+  events: DashboardEvent[]
 }
 
 interface EventForm {
@@ -302,26 +197,14 @@ interface EventForm {
   is_all_day: boolean
 }
 
-const viewMode = ref<'day' | 'week' | 'month'>('week')
 const currentDate = ref(new Date())
-const events = ref<Event[]>([])
+const events = ref<DashboardEvent[]>([])
 const showEventModal = ref(false)
-const showConfirmDelete = ref(false)
-const showContextMenu = ref(false)
-const contextMenuX = ref(0)
-const contextMenuY = ref(0)
-const contextEvent = ref<Event | null>(null)
-const editingEvent = ref<Event | null>(null)
+const editingEvent = ref<DashboardEvent | null>(null)
+const isLoading = ref(false)
+const loadError = ref('')
 
-const colorOptions = [
-  '#3b82f6',
-  '#ef4444',
-  '#10b981',
-  '#f59e0b',
-  '#8b5cf6',
-  '#ec4899',
-  '#06b6d4',
-]
+const colorOptions = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4']
 
 const eventForm = ref<EventForm>({
   title: '',
@@ -329,265 +212,99 @@ const eventForm = ref<EventForm>({
   event_type: 'appointment',
   description: '',
   color: '#3b82f6',
-  is_all_day: false,
+  is_all_day: false
 })
 
-// Helper functions
-function formatDate(date: Date | string, fmt: string): string {
-  const d = typeof date === 'string' ? parse(date, 'yyyy-MM-dd', new Date()) : date
-  return format(d, fmt)
-}
+const selectedDate = computed(() => formatDate(currentDate.value, 'yyyy-MM-dd'))
 
-function formatDateRange(): string {
-  if (viewMode.value === 'day') {
-    return formatDate(currentDate.value, 'MMMM d, yyyy')
-  } else if (viewMode.value === 'week') {
-    const start = startOfWeek(currentDate.value)
-    const end = endOfWeek(currentDate.value)
-    return `${formatDate(start, 'MMM d')} - ${formatDate(end, 'MMM d, yyyy')}`
-  } else {
-    return formatDate(currentDate.value, 'MMMM yyyy')
-  }
-}
-
-function formatHour(hour: number): string {
-  return format(new Date(2024, 0, 1, hour), 'h a')
-}
-
-function getWeekDays(): Date[] {
-  const start = startOfWeek(currentDate.value)
-  const end = endOfWeek(currentDate.value)
-  return eachDayOfInterval({ start, end })
-}
-
-function getMonthDays(): Date[] {
-  const start = startOfMonth(currentDate.value)
-  const end = endOfMonth(currentDate.value)
-  const weekStart = startOfWeek(start)
-  const weekEnd = endOfWeek(end)
-  return eachDayOfInterval({ start: weekStart, end: weekEnd })
-}
-
-function getEventsForDate(date: Date): Event[] {
-  const dateStr = formatDate(date, 'yyyy-MM-dd')
-  return events.value.filter(e => e.event_date === dateStr)
-}
-
-function getEventsForTime(hour: number): Event[] {
+const dayEvents = computed(() => {
   const dateStr = formatDate(currentDate.value, 'yyyy-MM-dd')
-  return events.value.filter(e => {
-    if (e.event_date !== dateStr) return false
-    if (!e.start_time) return false
-    const eventHour = parseInt(e.start_time.split(':')[0])
-    return eventHour === hour
-  })
+  return events.value
+    .filter((event) => event.event_date === dateStr)
+    .sort((left, right) => getSortTime(left).localeCompare(getSortTime(right)))
+})
+
+const providerColumns = computed<ProviderColumn[]>(() => {
+  const grouped = new Map<string, ProviderColumn>()
+  for (const event of dayEvents.value) {
+    const providerLabel = event.provider_name?.trim() || 'Unknown provider'
+    const providerKey = `${event.doctor_id || 'unknown'}::${providerLabel}`
+    if (!grouped.has(providerKey)) {
+      grouped.set(providerKey, {
+        key: providerKey,
+        label: providerLabel,
+        events: []
+      })
+    }
+    grouped.get(providerKey)?.events.push(event)
+  }
+
+  return Array.from(grouped.values())
+    .sort((left, right) => left.label.localeCompare(right.label))
+    .map((provider) => ({
+      ...provider,
+      events: [...provider.events].sort((left, right) => {
+        const timeCompare = getSortTime(left).localeCompare(getSortTime(right))
+        if (timeCompare !== 0) return timeCompare
+        return left.title.localeCompare(right.title)
+      })
+    }))
+})
+
+function formatDate(date: Date | string, fmt: string): string {
+  const parsed = typeof date === 'string' ? parse(date, 'yyyy-MM-dd', new Date()) : date
+  return format(parsed, fmt)
 }
 
-function previousPeriod() {
-  if (viewMode.value === 'day') {
-    currentDate.value = subDays(currentDate.value, 1)
-  } else if (viewMode.value === 'week') {
-    currentDate.value = subWeeks(currentDate.value, 1)
-  } else {
-    currentDate.value = subMonths(currentDate.value, 1)
+function onDateInput(event: Event) {
+  const value = (event.target as HTMLInputElement | null)?.value || ''
+  if (!value) {
+    return
   }
+  currentDate.value = parse(value, 'yyyy-MM-dd', new Date())
 }
 
-function nextPeriod() {
-  if (viewMode.value === 'day') {
-    currentDate.value = addDays(currentDate.value, 1)
-  } else if (viewMode.value === 'week') {
-    currentDate.value = addWeeks(currentDate.value, 1)
-  } else {
-    currentDate.value = addMonths(currentDate.value, 1)
-  }
+function previousDay() {
+  currentDate.value = addDays(currentDate.value, -1)
+}
+
+function nextDay() {
+  currentDate.value = addDays(currentDate.value, 1)
 }
 
 function goToToday() {
   currentDate.value = new Date()
 }
 
-function selectDay(date: Date) {
-  currentDate.value = date
-  viewMode.value = 'day'
-}
-
-function selectTimeSlot(hour: number, minute: number) {
-  eventForm.value = {
-    title: '',
-    event_date: formatDate(currentDate.value, 'yyyy-MM-dd'),
-    event_type: 'appointment',
-    description: '',
-    start_time: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
-    color: '#3b82f6',
-    is_all_day: false,
+function getSortTime(event: DashboardEvent): string {
+  if (!event.start_time) {
+    return '00:00'
   }
-  editingEvent.value = null
-  showEventModal.value = true
+  return event.start_time.slice(0, 5)
 }
 
-function selectEvent(event: Event) {
-  editingEvent.value = event
-  // Map Event to EventForm, ensuring description is always a string
-  eventForm.value = {
-    title: event.title,
-    event_date: event.event_date,
-    event_type: event.event_type,
-    description: event.description ?? '',
-    start_time: event.start_time,
-    end_time: event.end_time,
-    patient_id: event.patient_id,
-    color: event.color,
-    is_all_day: event.is_all_day,
+function getEventTimeLabel(event: DashboardEvent): string {
+  if (event.is_all_day || !event.start_time) {
+    return 'All day'
   }
-  showEventModal.value = true
+  return formatEventTime(event.start_time)
 }
 
-function openNewEventModal() {
-  eventForm.value = {
-    title: '',
-    event_date: formatDate(currentDate.value, 'yyyy-MM-dd'),
-    event_type: 'appointment',
-    description: '',
-    color: '#3b82f6',
-    is_all_day: false,
-  }
-  editingEvent.value = null
-  showEventModal.value = true
-  closeContextMenus()
+function formatEventType(type: string): string {
+  return type
+    .split('_')
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ')
 }
 
-function openEventForEdit() {
-  if (contextEvent.value) {
-    selectEvent(contextEvent.value)
-  }
-  closeContextMenus()
-}
-
-function closeEventModal() {
-  showEventModal.value = false
-  editingEvent.value = null
-}
-
-function showEventContextMenu(e: MouseEvent, event: Event) {
-  e.preventDefault()
-  contextEvent.value = event
-  contextMenuX.value = e.clientX
-  contextMenuY.value = e.clientY
-  showContextMenu.value = true
-}
-
-function showContextMenuForNewEvent(e: MouseEvent, day?: Date) {
-  e.preventDefault()
-  if (day) {
-    currentDate.value = day
-  }
-  contextEvent.value = null
-  contextMenuX.value = e.clientX
-  contextMenuY.value = e.clientY
-  showContextMenu.value = true
-}
-
-function closeContextMenus() {
-  showContextMenu.value = false
-  contextEvent.value = null
-}
-
-function confirmDeleteEvent() {
-  if (contextEvent.value) {
-    showConfirmDelete.value = true
-  }
-  closeContextMenus()
-}
-
-async function saveEvent() {
-  try {
-    if (!eventForm.value.title) {
-      alert('Please enter a title')
-      return
-    }
-
-    const payload = JSON.stringify(eventForm.value)
-    
-    if (editingEvent.value && editingEvent.value.id) {
-      const response = await fetch(`/api/events/${editingEvent.value.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
-        },
-        body: payload,
-      })
-
-      if (!response.ok) {
-        alert('Failed to update event')
-        return
-      }
-
-      const data = await response.json()
-      if (editingEvent.value) {
-        const index = events.value.findIndex(e => e.id === editingEvent.value!.id)
-        if (index !== -1) {
-          events.value[index] = data.event
-        }
-      }
-    } else {
-      const response = await fetch('/api/events', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
-        },
-        body: payload,
-      })
-
-      if (!response.ok) {
-        alert('Failed to create event')
-        return
-      }
-
-      const data = await response.json()
-      events.value.push(data.event)
-    }
-
-    closeEventModal()
-  } catch (error) {
-    console.error('Error saving event:', error)
-    alert('Failed to save event')
-  }
-}
-
-async function deleteEvent() {
-  try {
-    if (!contextEvent.value || !contextEvent.value.id) return
-
-    const response = await fetch(`/api/events/${contextEvent.value.id}`, {
-      method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
-      },
-    })
-
-    if (!response.ok) {
-      alert('Failed to delete event')
-      return
-    }
-
-    events.value = events.value.filter(e => e.id !== contextEvent.value!.id)
-    showConfirmDelete.value = false
-    closeContextMenus()
-  } catch (error) {
-    console.error('Error deleting event:', error)
-    alert('Failed to delete event')
-  }
-}
-
-function isAppointmentEvent(event: Event): boolean {
+function isAppointmentEvent(event: DashboardEvent): boolean {
   return typeof event.id === 'string' && event.id.startsWith('apt-')
 }
 
-function getAppointmentStatus(event: Event): string {
-  // Title format is "Patient Name (status)"
+function getAppointmentStatus(event: DashboardEvent): string {
+  if (event.appointment_status) {
+    return event.appointment_status
+  }
   const match = event.title.match(/\(([^)]+)\)$/)
   return match ? match[1] : ''
 }
@@ -606,15 +323,130 @@ function formatEventTime(timeStr: string): string {
   return `${displayHour}:${m} ${ampm}`
 }
 
-async function confirmAppointment(event: Event) {
-  if (!isAppointmentEvent(event)) return
+function openNewEventModal() {
+  eventForm.value = {
+    title: '',
+    event_date: formatDate(currentDate.value, 'yyyy-MM-dd'),
+    event_type: 'appointment',
+    description: '',
+    color: '#3b82f6',
+    is_all_day: false
+  }
+  editingEvent.value = null
+  showEventModal.value = true
+}
+
+function selectEvent(event: DashboardEvent) {
+  editingEvent.value = event
+  eventForm.value = {
+    title: event.title,
+    event_date: event.event_date,
+    event_type: event.event_type,
+    description: event.description ?? '',
+    start_time: event.start_time,
+    end_time: event.end_time,
+    patient_id: event.patient_id,
+    color: event.color,
+    is_all_day: event.is_all_day
+  }
+  showEventModal.value = true
+}
+
+function closeEventModal() {
+  showEventModal.value = false
+  editingEvent.value = null
+}
+
+async function saveEvent() {
+  try {
+    if (!eventForm.value.title) {
+      alert('Please enter a title')
+      return
+    }
+
+    const payload = JSON.stringify(eventForm.value)
+
+    if (editingEvent.value && editingEvent.value.id) {
+      const response = await fetch(`/api/events/${editingEvent.value.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('sessionToken')}`
+        },
+        body: payload
+      })
+
+      if (!response.ok) {
+        alert('Failed to update event')
+        return
+      }
+
+    } else {
+      const response = await fetch('/api/events', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('sessionToken')}`
+        },
+        body: payload
+      })
+
+      if (!response.ok) {
+        alert('Failed to create event')
+        return
+      }
+
+    }
+
+    closeEventModal()
+    await loadEvents()
+  } catch (error) {
+    console.error('Error saving event:', error)
+    alert('Failed to save event')
+  }
+}
+
+async function deleteEvent(event: DashboardEvent) {
+  if (isAppointmentEvent(event)) {
+    return
+  }
+
+  if (!confirm('Are you sure you want to delete this event?')) {
+    return
+  }
+
+  try {
+    const response = await fetch(`/api/events/${event.id}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('sessionToken')}`
+      }
+    })
+
+    if (!response.ok) {
+      alert('Failed to delete event')
+      return
+    }
+
+    events.value = events.value.filter((item) => item.id !== event.id)
+  } catch (error) {
+    console.error('Error deleting event:', error)
+    alert('Failed to delete event')
+  }
+}
+
+async function confirmAppointment(event: DashboardEvent) {
+  if (!isAppointmentEvent(event)) {
+    return
+  }
+
   const appointmentId = event.id.replace('apt-', '')
 
   try {
     const response = await fetch(`/api/appointments/${appointmentId}/confirm`, {
       method: 'PATCH',
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+        Authorization: `Bearer ${localStorage.getItem('sessionToken')}`
       }
     })
 
@@ -624,7 +456,6 @@ async function confirmAppointment(event: Event) {
       return
     }
 
-    // Reload events to reflect the status change
     await loadEvents()
   } catch (error) {
     console.error('Error confirming appointment:', error)
@@ -633,31 +464,31 @@ async function confirmAppointment(event: Event) {
 }
 
 async function loadEvents() {
-  try {
-    // Use a range that covers month view (which includes surrounding weeks)
-    const monthStart = startOfMonth(currentDate.value)
-    const monthEnd = endOfMonth(currentDate.value)
-    const weekStart = startOfWeek(currentDate.value)
-    const weekEnd = endOfWeek(currentDate.value)
-    
-    // Use the earlier of monthStart/weekStart and later of monthEnd/weekEnd
-    const rangeStartDate = new Date(Math.min(monthStart.getTime(), weekStart.getTime()))
-    const rangeEndDate = new Date(Math.max(monthEnd.getTime(), weekEnd.getTime()))
-    const start = formatDate(rangeStartDate, 'yyyy-MM-dd')
-    const end = formatDate(rangeEndDate, 'yyyy-MM-dd')
+  isLoading.value = true
+  loadError.value = ''
 
-    const response = await fetch(`/api/events?start_date=${start}&end_date=${end}`, {
+  const day = formatDate(currentDate.value, 'yyyy-MM-dd')
+
+  try {
+    const response = await fetch(`/api/events?start_date=${day}&end_date=${day}&include_all_providers=true`, {
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+        Authorization: `Bearer ${localStorage.getItem('sessionToken')}`
       }
     })
 
-    if (response.ok) {
-      const data = await response.json()
-      events.value = data.events || []
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}))
+      loadError.value = data.error || 'Failed to load events'
+      return
     }
+
+    const data = await response.json()
+    events.value = data.events || []
   } catch (error) {
     console.error('Error loading events:', error)
+    loadError.value = 'Failed to load events'
+  } finally {
+    isLoading.value = false
   }
 }
 
@@ -667,7 +498,6 @@ watch(currentDate, () => {
 
 onMounted(() => {
   loadEvents()
-  document.addEventListener('click', closeContextMenus)
 })
 </script>
 
@@ -675,303 +505,182 @@ onMounted(() => {
 .doctor-dashboard {
   background: #f5f5f5;
   min-height: 100vh;
+  padding-bottom: 2rem;
 }
-
 
 .dashboard-header {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  margin-bottom: 2rem;
   background: white;
-  padding: 1.5rem 2rem;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1.25rem 1.5rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
 }
 
-.controls {
-  display: flex;
-  gap: 2rem;
-  align-items: center;
+.header-main h1 {
+  margin: 0;
+  font-size: 1.6rem;
 }
 
-.view-switcher {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.view-btn {
-  padding: 0.5rem 1rem;
-  border: 2px solid #ddd;
-  background: white;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.view-btn.active {
-  background: #3b82f6;
-  color: white;
-  border-color: #3b82f6;
-}
-
-.view-btn:hover {
-  border-color: #3b82f6;
+.header-main p {
+  margin: 0.35rem 0 1rem 0;
+  color: #4b5563;
 }
 
 .date-navigation {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   align-items: center;
 }
 
 .nav-btn {
-  padding: 0.5rem 1rem;
-  border: 1px solid #ddd;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid #d1d5db;
   background: white;
   border-radius: 4px;
   cursor: pointer;
-  transition: all 0.3s;
 }
 
 .nav-btn:hover {
-  background: #f5f5f5;
+  background: #f3f4f6;
 }
 
-.current-date {
-  min-width: 200px;
-  font-weight: 600;
-  color: #333;
+.date-input {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
 }
 
-.calendar-container {
+.schedule-container {
+  margin: 0 1.5rem;
   background: white;
   border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   overflow: hidden;
-  max-height: 70vh;
-  overflow-y: auto;
-  margin: 0 2rem 2rem 2rem;
 }
 
-.day-view {
-  padding: 1.5rem;
-  max-height: 65vh;
-  overflow-y: auto;
+.schedule-header {
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #e5e7eb;
 }
 
-.day-header {
-  margin-bottom: 1.5rem;
-  text-align: center;
-}
-
-.day-grid {
-  display: grid;
-  gap: 0.5rem;
-}
-
-.hour-slot {
-  display: grid;
-  grid-template-columns: 80px 1fr;
-  gap: 1rem;
-  padding: 1rem;
-  background: #fafafa;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background 0.3s;
-  min-height: 80px;
-}
-
-.hour-slot:hover {
-  background: #f0f0f0;
-}
-
-.hour-label {
-  font-weight: 600;
-  color: #666;
-  font-size: 0.9rem;
-}
-
-.events-container {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: flex-start;
-}
-
-.week-view {
-  padding: 1.5rem;
-  max-height: 65vh;
-  overflow-y: auto;
-}
-
-.week-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 1rem;
-}
-
-.day-column {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  padding: 1rem;
-  background: #fafafa;
-  border-radius: 4px;
-}
-
-.day-header {
-  text-align: center;
-  padding-bottom: 0.5rem;
-  border-bottom: 2px solid #ddd;
-}
-
-.day-name {
-  font-weight: 600;
-  color: #666;
-  font-size: 0.9rem;
-}
-
-.day-date {
+.schedule-header h2 {
+  margin: 0;
   font-size: 1.2rem;
-  font-weight: bold;
-  color: #333;
 }
 
-.day-events {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  flex: 1;
-  cursor: pointer;
-  transition: background 0.3s;
-  padding: 0.5rem;
-  border-radius: 4px;
-}
-
-.day-events:hover {
-  background: #f0f0f0;
-}
-
-.month-view {
-  padding: 1.5rem;
-  max-height: 65vh;
-  overflow-y: auto;
-}
-
-.month-header {
+.status-message {
+  padding: 2rem 1.5rem;
+  color: #4b5563;
   text-align: center;
-  margin-bottom: 1.5rem;
 }
 
-.calendar-grid {
+.error-message {
+  color: #b91c1c;
+}
+
+.empty-message {
+  color: #6b7280;
+}
+
+.provider-columns {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 0.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  padding: 1rem 1.5rem 1.5rem;
 }
 
-.weekday-header {
-  text-align: center;
-  font-weight: 600;
-  padding: 0.75rem;
-  background: #f0f0f0;
-  border-radius: 4px;
-}
-
-.calendar-day {
-  min-height: 100px;
-  padding: 0.5rem;
+.provider-column {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
   background: #fafafa;
-  border-radius: 4px;
-  border: 1px solid #ddd;
-  cursor: pointer;
-  transition: all 0.3s;
+  overflow: hidden;
+}
+
+.provider-column-header {
+  padding: 0.75rem 0.9rem;
+  background: #e0ecff;
+  color: #1e3a8a;
+  font-weight: 700;
+  border-bottom: 1px solid #dbeafe;
+}
+
+.provider-events {
   display: flex;
   flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
 }
 
-.calendar-day:hover {
-  background: #f0f0f0;
-  border-color: #3b82f6;
+.schedule-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  padding: 0.75rem;
 }
 
-.calendar-day.today {
-  background: #ecf5ff;
-  border-color: #3b82f6;
-  border-width: 2px;
+.event-topline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
 }
 
-.calendar-day.other-month {
-  background: #f9f9f9;
-  color: #999;
-}
-
-.day-number {
-  font-weight: 600;
-  margin-bottom: 0.25rem;
-}
-
-.event {
-  padding: 0.5rem;
-  border-radius: 4px;
-  color: white;
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: transform 0.3s, box-shadow 0.3s;
-}
-
-.event:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-}
-
-.confirm-btn {
-  margin-top: 4px;
-  padding: 2px 8px;
-  background: rgba(255, 255, 255, 0.9);
-  color: #047857;
-  border: 1px solid #047857;
-  border-radius: 3px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.confirm-btn:hover {
-  background: #047857;
-  color: white;
-}
-
-.event-time {
-  font-size: 0.75rem;
-  opacity: 1;
-  color: #f8fafc;
+.event-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
 }
 
 .event-title {
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: #111827;
 }
 
-.event-time {
-  font-size: 0.75rem;
-  opacity: 0.9;
+.event-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+  color: #374151;
 }
 
-.event-dot {
-  font-size: 1.2rem;
+.event-description {
+  margin: 0.5rem 0 0 0;
+  color: #4b5563;
+}
+
+.actions-column {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
+.action-btn,
+.confirm-btn {
+  padding: 0.45rem 0.7rem;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.confirm-btn {
+  background: #047857;
+  color: white;
+}
+
+.confirm-btn:hover {
+  background: #065f46;
 }
 
 .modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0,0,0,0.5);
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -981,39 +690,31 @@ onMounted(() => {
 .modal {
   background: white;
   border-radius: 8px;
-  max-width: 500px;
-  width: 90%;
+  max-width: 520px;
+  width: 92%;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 20px 25px rgba(0,0,0,0.15);
-}
-
-.modal.small {
-  max-width: 300px;
+  box-shadow: 0 20px 25px rgba(0, 0, 0, 0.15);
 }
 
 .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.5rem;
-  border-bottom: 1px solid #ddd;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .close-btn {
-  background: none;
   border: none;
-  font-size: 1.5rem;
+  background: transparent;
   cursor: pointer;
-  color: #999;
-}
-
-.close-btn:hover {
-  color: #333;
+  font-size: 1.2rem;
+  color: #6b7280;
 }
 
 .modal-content {
-  padding: 1.5rem;
+  padding: 1.25rem;
 }
 
 .form-group {
@@ -1024,164 +725,100 @@ onMounted(() => {
   display: block;
   margin-bottom: 0.5rem;
   font-weight: 600;
-  color: #333;
 }
 
 .form-group input,
 .form-group select,
 .form-group textarea {
   width: 100%;
-  padding: 0.75rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-family: inherit;
-  font-size: 1rem;
   box-sizing: border-box;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
 }
 
 .form-group textarea {
+  min-height: 90px;
   resize: vertical;
-  min-height: 100px;
-}
-
-.form-group input:focus,
-.form-group select:focus,
-.form-group textarea:focus {
-  outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1rem;
+  gap: 0.75rem;
 }
 
 .color-picker {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.65rem;
   flex-wrap: wrap;
 }
 
 .color-option {
-  width: 40px;
-  height: 40px;
+  width: 34px;
+  height: 34px;
   border-radius: 4px;
-  border: 2px solid #ddd;
   cursor: pointer;
-  transition: all 0.3s;
-}
-
-.color-option:hover {
-  transform: scale(1.1);
+  border: 2px solid #e5e7eb;
 }
 
 .color-option.selected {
-  border-color: #333;
-  box-shadow: 0 0 0 2px white, 0 0 0 4px #333;
+  border-color: #111827;
 }
 
 .modal-actions {
+  margin-top: 1rem;
   display: flex;
-  gap: 1rem;
   justify-content: flex-end;
-  margin-top: 1.5rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid #ddd;
+  gap: 0.5rem;
 }
-
 
 .btn-primary,
 .btn-secondary,
 .btn-danger {
-  padding: 0.75rem 1.5rem;
-  border: none;
+  border: 1px solid transparent;
   border-radius: 4px;
-  font-weight: 600;
   cursor: pointer;
-  transition: all 0.3s;
+  font-weight: 600;
+  padding: 0.5rem 0.8rem;
 }
 
 .btn-primary {
-  background: #3b82f6;
+  background: #2563eb;
   color: white;
 }
 
 .btn-primary:hover {
-  background: #2563eb;
+  background: #1d4ed8;
 }
 
 .btn-secondary {
-  background: #e5e7eb;
-  color: #333;
+  background: #f3f4f6;
+  color: #111827;
+  border-color: #d1d5db;
 }
 
 .btn-secondary:hover {
-  background: #d1d5db;
+  background: #e5e7eb;
 }
 
 .btn-danger {
-  background: #ef4444;
+  background: #dc2626;
   color: white;
 }
 
 .btn-danger:hover {
-  background: #dc2626;
+  background: #b91c1c;
 }
 
-.context-menu {
-  position: fixed;
-  background: white;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  box-shadow: 0 10px 15px rgba(0,0,0,0.2);
-  z-index: 1001;
-  min-width: 150px;
-}
-
-.menu-item {
-  padding: 0.75rem 1rem;
-  cursor: pointer;
-  transition: background 0.3s;
-}
-
-.menu-item:hover {
-  background: #f5f5f5;
-}
-
-.menu-item.delete {
-  color: #ef4444;
-}
-
-.menu-item.delete:hover {
-  background: #fee2e2;
-}
-
-.menu-divider {
-  height: 1px;
-  background: #ddd;
-  margin: 0.25rem 0;
-}
-
-@media (max-width: 768px) {
-  .dashboard-header {
-    flex-direction: column;
-    gap: 1rem;
+@media (max-width: 900px) {
+  .provider-columns {
+    grid-template-columns: 1fr;
+    padding: 0.75rem 1rem 1rem;
   }
 
-  .controls {
-    flex-direction: column;
-    width: 100%;
-  }
-
-  .week-grid {
-    grid-template-columns: repeat(7, 1fr);
-    gap: 0.25rem;
-  }
-
-  .modal {
-    width: 95%;
+  .actions-column {
+    justify-content: flex-start;
   }
 }
 </style>

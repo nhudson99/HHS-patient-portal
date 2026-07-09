@@ -3,8 +3,6 @@
  * Handles all HTTP requests to the Python Flask backend
  */
 
-import bcryptjs from 'bcryptjs';
-
 const API_BASE_URL = (import.meta as any).env.VITE_API_URL || '';
 const API_REQUEST_TIMEOUT_MS = 15000;
 
@@ -71,19 +69,8 @@ async function request<T>(
  */
 export const authApi = {
   /**
-   * Get salt for a username (needed for client-side password hashing)
-   */
-  async getSalt(username: string) {
-    return request<{
-      salt: string;
-    }>('/api/auth/salt', {
-      method: 'POST',
-      body: JSON.stringify({ username }),
-    });
-  },
-
-  /**
-   * Login user with client-side hashed password
+   * Login user with plaintext password over HTTPS/TLS.
+   * Password verification is performed server-side.
    */
   async login(username: string, password: string): Promise<ApiResponse<{
     message: string;
@@ -96,31 +83,6 @@ export const authApi = {
     };
     requirePasswordChange?: boolean;
   }>> {
-    // Step 1: Get the bcrypt salt for this user
-    const saltResponse = await this.getSalt(username);
-    
-    if (saltResponse.error) {
-      return { error: saltResponse.error } as any;
-    }
-    
-    const bcryptSalt = saltResponse.data?.salt;
-    if (!bcryptSalt) {
-      return { error: 'Failed to retrieve salt for hashing' };
-    }
-    
-    // Step 2: Hash the password client-side using bcryptjs with the retrieved salt
-    // The bcryptSalt is a full bcrypt salt string (e.g., "$2a$10$...")
-    let hashedPassword: string;
-    try {
-      // bcryptjs.hash can use an existing salt by using it directly
-      // We use hashSync to get consistent behavior
-      hashedPassword = bcryptjs.hashSync(password, bcryptSalt);
-    } catch (error) {
-      console.error('Password hashing error:', error);
-      return { error: 'Failed to hash password - invalid salt' };
-    }
-    
-    // Step 3: Send the hashed password (plaintext password never leaves client)
     return request<{
       message: string;
       sessionToken: string;
@@ -133,7 +95,7 @@ export const authApi = {
       requirePasswordChange?: boolean;
     }>('/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ username, password: hashedPassword }),
+      body: JSON.stringify({ username, password }),
     });
   },
   

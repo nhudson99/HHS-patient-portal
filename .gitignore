@@ -20,6 +20,11 @@ ENV/
 
 # TypeScript server (legacy)
 server/
+!server/
+server/*
+!server/db/
+!server/db/schema.sql
+!server/db/seed.sql
 coverage/
 .scannerwork/
 .sonar/

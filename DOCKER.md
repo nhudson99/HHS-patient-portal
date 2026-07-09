@@ -207,10 +207,10 @@ Test endpoints:
 # Health check
 curl http://localhost:3000/health
 
-# Get salt for login
-curl -X POST http://localhost:3000/api/auth/salt \
+# Login (plaintext password over HTTPS/TLS in production)
+curl -X POST http://localhost:3000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"patient1"}'
+  -d '{"username":"patient1","password":"Patient123!"}'
 ```
 
 ### Support
