@@ -142,7 +142,7 @@ The kiosk check-in flow now attempts patient + appointment lookup (name, DOB, an
 
 Configure email delivery with these env vars:
 
-- `CHECKIN_ALERT_EMAIL` (defaults to `nathan@hudsonitconsulting.com`)
+- `CHECKIN_ALERT_EMAIL` (defaults to `Sigma@SigmaMHUC.com`)
 
 Recommended (Microsoft Graph API):
 

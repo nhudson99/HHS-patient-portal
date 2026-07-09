@@ -11,7 +11,7 @@ from email.message import EmailMessage
 from typing import Optional
 
 
-DEFAULT_ALERT_RECIPIENT = 'nathan@hudsonitconsulting.com'
+DEFAULT_ALERT_RECIPIENT = 'Sigma@SigmaMHUC.com'
 
 
 def _send_via_graph(
