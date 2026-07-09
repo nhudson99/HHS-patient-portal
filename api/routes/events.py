@@ -104,11 +104,8 @@ def get_events():
                        p.first_name || ' ' || p.last_name AS patient_name,
                        d.first_name || ' ' || d.last_name AS provider_name
                 FROM appointments a
-                JOIN doctors d ON d.id = a.doctor_id
-                LEFT JOIN patients p ON p.id = a.patient_id
                 WHERE a.doctor_id = %s
-                AND a.appointment_date BETWEEN %s AND %s
-                ORDER BY a.appointment_date
+                AND a.appointment_date::date BETWEEN %s AND %s
             """
             appointments_params = (doctor_id, start_date, end_date)
 
