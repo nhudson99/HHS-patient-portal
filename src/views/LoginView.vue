@@ -270,5 +270,11 @@ input:focus {
     padding: 2rem;
     box-shadow: none;
   }
+  .checkin-link {
+    top: 0.75rem;
+    right: 0.75rem;
+    padding: 0.4rem 0.85rem;
+    font-size: 0.82rem;
+  }
 }
 </style>

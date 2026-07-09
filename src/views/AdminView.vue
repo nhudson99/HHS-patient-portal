@@ -1074,4 +1074,57 @@ async function signIn() {
   cursor: not-allowed;
   align-self: flex-start;
 }
+
+@media (max-width: 768px) {
+  .admin-main {
+    padding: 16px 12px;
+  }
+
+  .admin-login-card {
+    padding: 32px 20px;
+    margin: 16px;
+  }
+
+  .admin-welcome h2 {
+    font-size: 20px;
+  }
+
+  .admin-tabs {
+    flex-wrap: wrap;
+  }
+
+  .tab-btn {
+    flex: 1;
+    text-align: center;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .span-2 {
+    grid-column: span 1;
+  }
+
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .section-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .entity-form {
+    padding: 12px;
+  }
+
+  .entity-table th,
+  .entity-table td {
+    padding: 8px 6px;
+    font-size: 12px;
+  }
+}
 </style>

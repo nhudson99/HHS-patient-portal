@@ -402,4 +402,15 @@ async function handlePasswordChange() {
     width: 100%;
   }
 }
+
+@media (max-width: 480px) {
+  .profile-page {
+    padding: 0.75rem;
+  }
+
+  .profile-card {
+    padding: 1.25rem;
+    border-radius: 12px;
+  }
+}
 </style>

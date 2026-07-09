@@ -479,4 +479,34 @@ input:focus {
   font-size: 0.85rem;
   color: #90a4ae;
 }
+
+@media (max-width: 480px) {
+  .kiosk-container {
+    padding: 12px;
+    align-items: flex-start;
+    padding-top: 24px;
+  }
+
+  .kiosk-card {
+    padding: 32px 20px;
+    border-radius: 14px;
+  }
+
+  h1 {
+    font-size: 1.8rem;
+  }
+
+  h2 {
+    font-size: 1.5rem;
+  }
+
+  .summary-row {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .summary-value {
+    text-align: left;
+  }
+}
 </style>
