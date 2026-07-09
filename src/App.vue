@@ -2,16 +2,18 @@
   <div id="app">
     <header v-if="showHeader" class="top-header">
       <div class="header-content">
-        <h1>🏥 {{ pageTitle }}</h1>
-        <div class="user-actions">
-          <RouterLink
-            v-for="button in navButtons"
-            :key="button.to"
-            :to="button.to"
-            class="header-btn"
+        <div class="header-left">
+          <button
+            v-if="navButtons.length > 0"
+            class="hamburger-btn"
+            aria-label="Open navigation menu"
+            @click="toggleSidebar"
           >
-            {{ button.label }}
-          </RouterLink>
+            ☰
+          </button>
+          <h1>🏥 {{ pageTitle }}</h1>
+        </div>
+        <div class="user-actions">
           <button
             v-if="showFeatureRequestButton"
             @click="openFeatureRequestModal"
@@ -25,6 +27,28 @@
         </div>
       </div>
     </header>
+    <div
+      v-if="showHeader && showSidebar && navButtons.length > 0"
+      class="sidebar-overlay"
+      @click="closeSidebar"
+    ></div>
+    <aside
+      v-if="showHeader && showSidebar && navButtons.length > 0"
+      class="app-sidebar"
+      aria-label="Application navigation"
+    >
+      <nav class="sidebar-nav">
+        <RouterLink
+          v-for="button in navButtons"
+          :key="button.to"
+          :to="button.to"
+          class="sidebar-link"
+          @click="closeSidebar"
+        >
+          {{ button.label }}
+        </RouterLink>
+      </nav>
+    </aside>
     <div v-if="showFeatureRequestModal" class="modal-overlay" @click="closeFeatureRequestModal">
       <div class="modal" @click.stop>
         <div class="modal-header">
@@ -83,6 +107,7 @@ type NavButton = {
 const route = useRoute()
 const router = useRouter()
 const currentUser = ref<{ name?: string; username?: string; role?: string } | null>(null)
+const showSidebar = ref(false)
 const showFeatureRequestModal = ref(false)
 const featureRequestDescription = ref('')
 const featureRequestError = ref('')
@@ -172,6 +197,14 @@ function closeFeatureRequestModal() {
   showFeatureRequestModal.value = false
 }
 
+function toggleSidebar() {
+  showSidebar.value = !showSidebar.value
+}
+
+function closeSidebar() {
+  showSidebar.value = false
+}
+
 async function submitFeatureRequest() {
   featureRequestError.value = ''
   featureRequestSuccess.value = false
@@ -236,6 +269,7 @@ onMounted(() => {
 watch(
   () => route.fullPath,
   () => {
+    closeSidebar()
     loadUser()
   }
 )
@@ -250,13 +284,8 @@ watch(
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  background-color: #f5f5f5;
-  color: #333;
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   background-color: #f0f4f8;
   color: #111827;
-}
 }
 
 #app {
@@ -267,25 +296,11 @@ body {
   position: sticky;
   top: 0;
   z-index: 1000;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-.top-header {
-  position: sticky;
-  top: 0;
-  z-index: 1000;
   background: #1a3a5c;
   color: white;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
-}
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.header-content {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 1rem 2rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
 .header-content {
   max-width: 1400px;
   margin: 0 auto;
@@ -294,11 +309,32 @@ body {
   align-items: center;
   justify-content: space-between;
 }
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .header-content h1 {
   margin: 0;
   font-size: 1.4rem;
+}
+
+.hamburger-btn {
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 6px;
+  background: transparent;
+  color: #fff;
+  font-size: 1.1rem;
+  line-height: 1;
+  transition: background 0.2s;
+}
+
+.hamburger-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .user-actions {
@@ -311,117 +347,83 @@ body {
   font-weight: 600;
 }
 
-.header-btn {
-  padding: 0.5rem 1rem;
-  background: rgba(255,255,255,0.2);
-  color: white;
-  border: 1px solid white;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.3s;
+.app-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 2200;
+  width: 280px;
+  max-width: 80vw;
+  height: 100vh;
+  background: #0f2740;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 4.5rem 1rem 1rem;
+}
+
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sidebar-link {
+  display: block;
+  padding: 0.7rem 0.85rem;
+  color: rgba(255, 255, 255, 0.9);
   text-decoration: none;
-}
-
-.header-btn:hover {
-  background: rgba(255,255,255,0.3);
-}
-
-.header-btn.router-link-active {
-  background: rgba(255,255,255,0.35);
-  font-weight: 700;
-.header-btn {
-  padding: 0.45rem 1rem;
-  background: transparent;
-  color: rgba(255,255,255,0.85);
-  border: 1px solid rgba(255,255,255,0.3);
   border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.2s, color 0.2s;
-  text-decoration: none;
-  font-size: 0.9rem;
+  border: 1px solid transparent;
 }
 
-.header-btn:hover {
-  background: rgba(255,255,255,0.12);
-  color: #fff;
+.sidebar-link:hover {
+  background: rgba(255, 255, 255, 0.12);
 }
 
-.header-btn.router-link-active {
-  background: rgba(255,255,255,0.18);
-  color: #fff;
+.sidebar-link.router-link-active {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.35);
   font-weight: 600;
-  border-color: rgba(255,255,255,0.55);
-}
 }
 
 .logout-btn {
-  padding: 0.5rem 1rem;
-  background: rgba(255,255,255,0.2);
-  color: white;
-  border: 1px solid white;
-  border-radius: 4px;
+  padding: 0.45rem 1rem;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
   cursor: pointer;
-  transition: all 0.3s;
+  font-size: 0.9rem;
+  transition: background 0.2s, color 0.2s;
 }
 
 .logout-btn:hover {
-  .logout-btn {
-    padding: 0.45rem 1rem;
-    background: transparent;
-    color: rgba(255,255,255,0.85);
-    border: 1px solid rgba(255,255,255,0.3);
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 0.9rem;
-    transition: background 0.2s, color 0.2s;
-  }
-
-  .logout-btn:hover {
-    background: rgba(239,68,68,0.25);
-    border-color: rgba(239,68,68,0.6);
-    color: #fff;
-  }
-  background: rgba(255,255,255,0.3);
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.6);
+  color: #fff;
 }
 
 .admin-role-badge {
-  background: rgba(15, 23, 42, 0.4);
+  background: #ef4444;
   color: #fff;
-  font-size: 11px;
+  font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.08em;
-  padding: 3px 8px;
-  .admin-role-badge {
-    background: #ef4444;
-    color: #fff;
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    padding: 2px 8px;
-    border-radius: 4px;
-  }
+  padding: 2px 8px;
   border-radius: 4px;
 }
 
 .feature-request-btn {
-  padding: 0.5rem 0.85rem;
-  background: #ffffff;
-  color: #4c1d95;
-  border: 1px solid #c4b5fd;
-  border-radius: 999px;
-  font-weight: 700;
-  font-size: 0.78rem;
-  letter-spacing: 0.05em;
-  transition: all 0.2s;
-}
-
-.feature-request-btn:hover {
-  background: #e9d5ff;
-.feature-request-btn {
   padding: 0.4rem 0.9rem;
   background: transparent;
-  color: rgba(255,255,255,0.85);
-  border: 1px dashed rgba(255,255,255,0.4);
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px dashed rgba(255, 255, 255, 0.4);
   border-radius: 6px;
   font-weight: 600;
   font-size: 0.78rem;
@@ -430,9 +432,8 @@ body {
 }
 
 .feature-request-btn:hover {
-  background: rgba(255,255,255,0.12);
+  background: rgba(255, 255, 255, 0.12);
   color: #fff;
-}
 }
 
 .modal-overlay {
@@ -442,7 +443,7 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 2000;
+  z-index: 3000;
 }
 
 .modal {
@@ -587,5 +588,21 @@ button {
 
 input, select, textarea {
   font-family: inherit;
+}
+
+@media (max-width: 880px) {
+  .header-content {
+    padding: 0.75rem 1rem;
+  }
+
+  .header-content h1 {
+    font-size: 1.05rem;
+  }
+
+  .user-actions {
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
 }
 </style>
