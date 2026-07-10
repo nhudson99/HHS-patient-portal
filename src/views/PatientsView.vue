@@ -81,8 +81,11 @@
               class="accordion-item"
             >
               <button class="accordion-header" @click="toggleProperty(prop.property_id)">
-                <span>{{ prop.name }}</span>
+                <span>{{ getPropertyDisplayName(prop) }}</span>
                 <span class="accordion-actions">
+                  <span v-if="getSaveStatus(prop.property_id) !== 'idle'" class="note-save-status-inline" :class="getSaveStatus(prop.property_id)">
+                    {{ saveStatusLabel(prop.property_id) }}
+                  </span>
                   <span class="toggle-indicator">
                     {{ expandedProperties.has(prop.property_id) ? '−' : '+' }}
                   </span>
@@ -90,7 +93,28 @@
                 </span>
               </button>
               <div v-if="expandedProperties.has(prop.property_id)" class="accordion-body">
-                {{ prop.description || '—' }}
+                <div class="note-editor">
+                  <label class="note-label" :for="`note-title-${prop.property_id}`">Title</label>
+                  <input
+                    :id="`note-title-${prop.property_id}`"
+                    class="note-title-input"
+                    :value="getPropertyDraft(prop).name"
+                    @input="onPropertyFieldChange(prop, 'name', ($event.target as HTMLInputElement).value)"
+                  />
+                  <label class="note-label" :for="`note-body-${prop.property_id}`">Notes</label>
+                  <textarea
+                    :id="`note-body-${prop.property_id}`"
+                    class="note-body-input"
+                    rows="5"
+                    :value="getPropertyDraft(prop).description"
+                    @input="onPropertyFieldChange(prop, 'description', ($event.target as HTMLTextAreaElement).value)"
+                  />
+                  <p class="note-audit">
+                    Created by Dr. {{ formatProviderName(prop.created_by_name) }}
+                    · Last edited by Dr. {{ formatProviderName(prop.updated_by_name) }}
+                    <span v-if="prop.updated_at"> · {{ formatDate(prop.updated_at) }}</span>
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -286,10 +310,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { Patient, PatientProperty, PatientDocument } from '@/types'
+import { patientPropertiesApi } from '@/api/index'
 import { logout } from '@/store'
+
+const AUTOSAVE_DELAY_MS = 800
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
+
+interface PropertyDraft {
+  name: string
+  description: string
+  updated_at?: string
+}
 
 const patients = ref<Patient[]>([])
 const router = useRouter()
@@ -307,6 +341,10 @@ const propertyForm = ref({
   name: '',
   description: ''
 })
+const propertyDrafts = ref<Record<number, PropertyDraft>>({})
+const saveStatuses = ref<Record<number, SaveStatus>>({})
+const debounceTimers = new Map<number, ReturnType<typeof setTimeout>>()
+const pendingSaveProps = new Map<number, PatientProperty>()
 
 // Add patient state
 const showAddPatientModal = ref(false)
@@ -414,6 +452,197 @@ function cancelDelete() {
   showDeleteConfirm.value = false
 }
 
+function formatProviderName(name?: string | null) {
+  return name?.trim() || 'Unknown provider'
+}
+
+function getPropertyDraft(prop: PatientProperty): PropertyDraft {
+  const existing = propertyDrafts.value[prop.property_id]
+  if (existing) {
+    return existing
+  }
+  const draft: PropertyDraft = {
+    name: prop.name,
+    description: prop.description || '',
+    updated_at: prop.updated_at,
+  }
+  propertyDrafts.value = {
+    ...propertyDrafts.value,
+    [prop.property_id]: draft,
+  }
+  return draft
+}
+
+function getPropertyDisplayName(prop: PatientProperty) {
+  return getPropertyDraft(prop).name || prop.name
+}
+
+function getSaveStatus(propertyId: number): SaveStatus {
+  return saveStatuses.value[propertyId] || 'idle'
+}
+
+function saveStatusLabel(propertyId: number) {
+  const status = getSaveStatus(propertyId)
+  if (status === 'saving') return 'Saving…'
+  if (status === 'saved') return 'Saved'
+  if (status === 'error') return 'Save failed'
+  return ''
+}
+
+function setSaveStatus(propertyId: number, status: SaveStatus) {
+  saveStatuses.value = { ...saveStatuses.value, [propertyId]: status }
+  if (status === 'saved') {
+    setTimeout(() => {
+      if (saveStatuses.value[propertyId] === 'saved') {
+        const next = { ...saveStatuses.value }
+        delete next[propertyId]
+        saveStatuses.value = next
+      }
+    }, 2000)
+  }
+}
+
+function clearPendingSaves() {
+  for (const timer of debounceTimers.values()) {
+    clearTimeout(timer)
+  }
+  debounceTimers.clear()
+  pendingSaveProps.clear()
+  propertyDrafts.value = {}
+  saveStatuses.value = {}
+}
+
+function mergePropertyFromServer(property: PatientProperty) {
+  const idx = patientProperties.value.findIndex(p => p.property_id === property.property_id)
+  if (idx === -1) {
+    patientProperties.value = [...patientProperties.value, property]
+  } else {
+    const next = [...patientProperties.value]
+    next[idx] = property
+    patientProperties.value = next
+  }
+  propertyDrafts.value = {
+    ...propertyDrafts.value,
+    [property.property_id]: {
+      name: property.name,
+      description: property.description || '',
+      updated_at: property.updated_at,
+    },
+  }
+}
+
+function onPropertyFieldChange(prop: PatientProperty, field: 'name' | 'description', value: string) {
+  const draft = getPropertyDraft(prop)
+  propertyDrafts.value = {
+    ...propertyDrafts.value,
+    [prop.property_id]: {
+      ...draft,
+      [field]: value,
+    },
+  }
+  schedulePropertySave(prop)
+}
+
+function schedulePropertySave(prop: PatientProperty) {
+  pendingSaveProps.set(prop.property_id, prop)
+  const existingTimer = debounceTimers.get(prop.property_id)
+  if (existingTimer) {
+    clearTimeout(existingTimer)
+  }
+  const timer = setTimeout(() => {
+    debounceTimers.delete(prop.property_id)
+    const latestProp = pendingSaveProps.get(prop.property_id) || prop
+    pendingSaveProps.delete(prop.property_id)
+    void persistPropertyDraft(latestProp)
+  }, AUTOSAVE_DELAY_MS)
+  debounceTimers.set(prop.property_id, timer)
+}
+
+async function persistPropertyDraft(prop: PatientProperty, keepalive = false) {
+  if (!selectedPatientId.value) return
+
+  const draft = getPropertyDraft(prop)
+  if (!draft.name.trim()) {
+    setSaveStatus(prop.property_id, 'error')
+    return
+  }
+
+  setSaveStatus(prop.property_id, 'saving')
+
+  const payload = {
+    name: draft.name.trim(),
+    description: draft.description,
+    updated_at: draft.updated_at || prop.updated_at,
+  }
+
+  if (keepalive) {
+    const token = localStorage.getItem('sessionToken')
+    fetch(`/api/patient-properties/${selectedPatientId.value}/${prop.property_id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+      keepalive: true,
+    }).catch(() => {})
+    return
+  }
+
+  const response = await patientPropertiesApi.update(
+    selectedPatientId.value,
+    prop.property_id,
+    payload,
+  )
+
+  if (handleApiAuthFailure(response.error)) {
+    return
+  }
+
+  if (response.error?.includes('HTTP 409')) {
+    propertiesError.value = 'Note was updated by another provider. Reloading latest version.'
+    await loadProperties()
+    return
+  }
+
+  if (response.error || !response.data?.property) {
+    setSaveStatus(prop.property_id, 'error')
+    propertiesError.value = response.error || 'Failed to save note'
+    schedulePropertySave(prop)
+    return
+  }
+
+  mergePropertyFromServer(response.data.property)
+  setSaveStatus(prop.property_id, 'saved')
+  propertiesError.value = ''
+}
+
+function flushPendingSaves() {
+  for (const [propertyId, timer] of debounceTimers.entries()) {
+    clearTimeout(timer)
+    debounceTimers.delete(propertyId)
+    const prop = pendingSaveProps.get(propertyId)
+      || patientProperties.value.find(p => p.property_id === propertyId)
+    pendingSaveProps.delete(propertyId)
+    if (prop) {
+      persistPropertyDraft(prop, true)
+    }
+  }
+}
+
+function handleBeforeUnload() {
+  flushPendingSaves()
+}
+
+function handleApiAuthFailure(error?: string): boolean {
+  if (error?.includes('HTTP 401')) {
+    logout()
+    void router.replace('/')
+    return true
+  }
+  return false
+}
+
 function formatDate(dateStr: string) {
   const date = new Date(dateStr)
   return date.toLocaleDateString('en-US', {
@@ -468,26 +697,22 @@ async function loadProperties() {
     return
   }
 
+  clearPendingSaves()
   propertiesLoading.value = true
   propertiesError.value = ''
   try {
-    const response = await fetch(`/api/patient-properties/${selectedPatientId.value}`, {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
-      }
-    })
+    const response = await patientPropertiesApi.list(selectedPatientId.value)
 
-    if (await handleAuthFailure(response)) {
+    if (handleApiAuthFailure(response.error)) {
       return
     }
 
-    if (!response.ok) {
+    if (response.error) {
       propertiesError.value = 'Failed to load properties'
       return
     }
 
-    const data = await response.json()
-    patientProperties.value = data.properties || []
+    patientProperties.value = response.data?.properties || []
     expandedProperties.value = new Set()
   } catch (err) {
     console.error('Failed to load properties:', err)
@@ -501,30 +726,31 @@ async function saveProperty() {
   if (!selectedPatientId.value || !propertyForm.value.name.trim()) return
 
   try {
-    const response = await fetch(`/api/patient-properties/${selectedPatientId.value}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
-      },
-      body: JSON.stringify({
-        name: propertyForm.value.name.trim(),
-        description: propertyForm.value.description
-      })
+    const response = await patientPropertiesApi.create(selectedPatientId.value, {
+      name: propertyForm.value.name.trim(),
+      description: propertyForm.value.description,
     })
 
-    if (await handleAuthFailure(response)) {
+    if (handleApiAuthFailure(response.error)) {
       return
     }
 
-    if (!response.ok) {
-      propertiesError.value = 'Failed to add property'
+    if (response.error || !response.data?.property) {
+      propertiesError.value = response.error || 'Failed to add property'
       return
     }
 
-    const data = await response.json()
-    patientProperties.value = [...patientProperties.value, data.property]
-    expandedProperties.value = new Set(expandedProperties.value).add(data.property.property_id)
+    const created = response.data.property
+    patientProperties.value = [...patientProperties.value, created]
+    propertyDrafts.value = {
+      ...propertyDrafts.value,
+      [created.property_id]: {
+        name: created.name,
+        description: created.description || '',
+        updated_at: created.updated_at,
+      },
+    }
+    expandedProperties.value = new Set(expandedProperties.value).add(created.property_id)
     showAddDialog.value = false
   } catch (err) {
     console.error('Failed to add property:', err)
@@ -535,29 +761,35 @@ async function saveProperty() {
 async function deleteProperty() {
   if (!selectedPatientId.value || !pendingDelete.value) return
 
-  try {
-    const response = await fetch(
-      `/api/patient-properties/${selectedPatientId.value}/${pendingDelete.value.property_id}`,
-      {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
-        }
-      }
-    )
+  const propertyId = pendingDelete.value.property_id
+  const timer = debounceTimers.get(propertyId)
+  if (timer) {
+    clearTimeout(timer)
+    debounceTimers.delete(propertyId)
+    pendingSaveProps.delete(propertyId)
+  }
 
-    if (await handleAuthFailure(response)) {
+  try {
+    const response = await patientPropertiesApi.delete(selectedPatientId.value, propertyId)
+
+    if (handleApiAuthFailure(response.error)) {
       return
     }
 
-    if (!response.ok) {
+    if (response.error) {
       propertiesError.value = 'Failed to delete property'
       return
     }
 
     patientProperties.value = patientProperties.value.filter(
-      prop => prop.property_id !== pendingDelete.value?.property_id
+      prop => prop.property_id !== propertyId
     )
+    const nextDrafts = { ...propertyDrafts.value }
+    delete nextDrafts[propertyId]
+    propertyDrafts.value = nextDrafts
+    const nextStatuses = { ...saveStatuses.value }
+    delete nextStatuses[propertyId]
+    saveStatuses.value = nextStatuses
     cancelDelete()
   } catch (err) {
     console.error('Failed to delete property:', err)
@@ -567,9 +799,16 @@ async function deleteProperty() {
 
 onMounted(() => {
   loadPatients()
+  window.addEventListener('beforeunload', handleBeforeUnload)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+  clearPendingSaves()
 })
 
 watch(selectedPatientId, () => {
+  clearPendingSaves()
   loadProperties()
   loadDocuments()
 })
@@ -1051,6 +1290,57 @@ function formatFileSize(bytes: number): string {
   background: white;
   color: #374151;
   line-height: 1.4;
+}
+
+.note-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.note-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.note-title-input,
+.note-body-input {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  font: inherit;
+  color: #111827;
+  background: #fff;
+}
+
+.note-body-input {
+  resize: vertical;
+  min-height: 120px;
+}
+
+.note-audit {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.note-save-status-inline {
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.note-save-status-inline.saving {
+  color: #4338ca;
+}
+
+.note-save-status-inline.saved {
+  color: #15803d;
+}
+
+.note-save-status-inline.error {
+  color: #dc2626;
 }
 
 .modal-overlay {
