@@ -3,7 +3,7 @@
     <div class="dashboard-header">
       <div class="header-main">
         <h1>Provider Day Schedule</h1>
-        <p>All appointments and events for the selected day across providers</p>
+        <p>View provider availability across the clinic. Patient details are shown only for your own schedule.</p>
       </div>
       <div class="date-navigation">
         <button @click="previousDay" class="nav-btn">← Previous</button>
@@ -36,21 +36,26 @@
         <div v-for="provider in providerColumns" :key="provider.key" class="provider-column">
           <div class="provider-column-header">{{ provider.label }}</div>
           <div class="provider-events">
-            <div v-for="event in provider.events" :key="event.id" class="schedule-item">
+            <div
+              v-for="event in provider.events"
+              :key="event.id"
+              class="schedule-item"
+              :class="{ 'schedule-item--other': !event.is_own_event }"
+            >
               <div class="event-topline">
                 <span class="event-dot" :style="{ backgroundColor: event.color }"></span>
                 <span class="event-title">{{ event.title }}</span>
               </div>
               <div class="event-meta">
                 <span><strong>Time:</strong> {{ getEventTimeLabel(event) }}</span>
-                <span v-if="event.patient_name"><strong>Patient:</strong> {{ event.patient_name }}</span>
+                <span v-if="event.is_own_event && event.patient_name"><strong>Patient:</strong> {{ event.patient_name }}</span>
                 <span><strong>Type:</strong> {{ formatEventType(event.event_type) }}</span>
                 <span v-if="isAppointmentEvent(event) && getAppointmentStatus(event)">
                   <strong>Status:</strong> {{ getAppointmentStatus(event) }}
                 </span>
               </div>
-              <p v-if="event.description" class="event-description">{{ event.description }}</p>
-              <div class="actions-column">
+              <p v-if="event.is_own_event && event.description" class="event-description">{{ event.description }}</p>
+              <div v-if="event.is_own_event" class="actions-column">
                 <button
                   v-if="isAppointmentEvent(event) && getAppointmentStatus(event) === 'pending'"
                   class="confirm-btn"
@@ -175,6 +180,7 @@ interface DashboardEvent {
   provider_name?: string
   patient_name?: string
   appointment_status?: string
+  is_own_event?: boolean
   created_at: string
   updated_at: string
 }
@@ -616,6 +622,15 @@ onMounted(() => {
   border-radius: 8px;
   background: white;
   padding: 0.75rem;
+}
+
+.schedule-item--other {
+  background: #f9fafb;
+  border-style: dashed;
+}
+
+.schedule-item--other .event-title {
+  color: #4b5563;
 }
 
 .event-topline {

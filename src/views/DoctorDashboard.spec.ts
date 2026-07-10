@@ -25,12 +25,12 @@ describe('DoctorDashboard.vue', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Provider Day Schedule')
-    expect(wrapper.text()).toContain('All appointments and events for the selected day across providers')
+    expect(wrapper.text()).toContain('View provider availability across the clinic')
     expect(wrapper.find('.date-input').exists()).toBe(true)
     expect(wrapper.find('.add-event-btn').exists()).toBe(true)
   })
 
-  it('shows events for selected day across providers', async () => {
+  it('shows events for selected day across providers with redacted other-provider details', async () => {
     const today = getLocalDateString(new Date())
     vi.stubGlobal(
       'fetch',
@@ -48,6 +48,7 @@ describe('DoctorDashboard.vue', () => {
               color: '#3b82f6',
               is_all_day: false,
               provider_name: 'Dr. Alice Smith',
+              is_own_event: true,
               created_at: '2026-01-01T00:00:00Z',
               updated_at: '2026-01-01T00:00:00Z'
             },
@@ -55,14 +56,15 @@ describe('DoctorDashboard.vue', () => {
               id: 'apt-123',
               doctor_id: 'doc-2',
               event_type: 'appointment',
-              title: 'Jane Doe (pending)',
+              title: 'Appointment (pending)',
               event_date: today,
               start_time: '09:00:00',
               color: '#f59e0b',
               is_all_day: false,
               provider_name: 'Dr. Bob Jones',
-              patient_name: 'Jane Doe',
+              patient_name: null,
               appointment_status: 'pending',
+              is_own_event: false,
               created_at: '2026-01-01T00:00:00Z',
               updated_at: '2026-01-01T00:00:00Z'
             },
@@ -76,6 +78,7 @@ describe('DoctorDashboard.vue', () => {
               color: '#3b82f6',
               is_all_day: false,
               provider_name: 'Dr. Alice Smith',
+              is_own_event: true,
               created_at: '2026-01-01T00:00:00Z',
               updated_at: '2026-01-01T00:00:00Z'
             }
@@ -94,8 +97,35 @@ describe('DoctorDashboard.vue', () => {
 
     const items = wrapper.findAll('.schedule-item')
     expect(items.length).toBe(2)
-    expect(wrapper.text()).toContain('Confirm')
+    expect(wrapper.text()).toContain('Morning Huddle')
+    expect(wrapper.text()).toContain('Appointment (pending)')
+    expect(wrapper.text()).not.toContain('Jane Doe')
     expect(wrapper.text()).not.toContain('Future Event')
+
+    const otherProviderItem = wrapper.find('.schedule-item--other')
+    expect(otherProviderItem.exists()).toBe(true)
+    expect(otherProviderItem.text()).not.toContain('Confirm')
+    expect(otherProviderItem.text()).not.toContain('Edit')
+    expect(otherProviderItem.text()).not.toContain('Delete')
+
+    const ownProviderItem = wrapper.findAll('.schedule-item').find((item) => !item.classes().includes('schedule-item--other'))
+    expect(ownProviderItem?.text()).toContain('Edit')
+    expect(ownProviderItem?.text()).toContain('Delete')
+  })
+
+  it('requests all providers when loading events', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ events: [] })
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    mount(DoctorDashboard)
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalled()
+    const requestUrl = String(fetchMock.mock.calls[0][0])
+    expect(requestUrl).toContain('include_all_providers=true')
   })
 
   it('shows empty state when day has no events', async () => {

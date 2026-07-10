@@ -10,6 +10,42 @@ from api.middleware.auth import authenticate
 
 events_bp = Blueprint('events', __name__, url_prefix='/api/events')
 
+_EVENT_TYPE_LABELS = {
+    'appointment': 'Appointment',
+    'reminder': 'Reminder',
+    'note': 'Note',
+    'blocked_time': 'Blocked Time',
+    'meeting': 'Meeting',
+    'other': 'Other',
+}
+
+
+def _generic_event_title(event_type, appointment_status=None):
+    """Return a PHI-safe display title for another provider's event."""
+    if event_type == 'appointment' and appointment_status:
+        return f"Appointment ({appointment_status})"
+    return _EVENT_TYPE_LABELS.get(event_type, 'Other')
+
+
+def _apply_event_visibility(event, viewer_doctor_id):
+    """Tag own events and redact PHI from other providers' schedule rows."""
+    result = dict(event)
+    event_doctor_id = str(result.get('doctor_id', ''))
+    viewer_id = str(viewer_doctor_id)
+    is_own_event = event_doctor_id == viewer_id
+    result['is_own_event'] = is_own_event
+
+    if not is_own_event:
+        result['patient_name'] = None
+        result['patient_id'] = None
+        result['description'] = None
+        result['title'] = _generic_event_title(
+            result.get('event_type'),
+            result.get('appointment_status'),
+        )
+
+    return result
+
 
 def serialize_event(event):
     """Convert event dict with date/time objects to JSON-serializable dict"""
@@ -109,6 +145,8 @@ def get_events():
                        p.first_name || ' ' || p.last_name AS patient_name,
                        d.first_name || ' ' || d.last_name AS provider_name
                 FROM appointments a
+                JOIN doctors d ON d.id = a.doctor_id
+                LEFT JOIN patients p ON p.id = a.patient_id
                 WHERE a.doctor_id = %s
                 AND a.appointment_date::date BETWEEN %s AND %s
             """
@@ -152,9 +190,14 @@ def get_events():
                 'updated_at': apt['updated_at'].isoformat() if isinstance(apt['updated_at'], datetime) else apt.get('updated_at'),
             }
             serialized_events.append(apt_event)
+
+        visible_events = [
+            _apply_event_visibility(event, doctor_id)
+            for event in serialized_events
+        ]
         
         return jsonify({
-            'events': serialized_events
+            'events': visible_events
         }), 200
         
     except Exception:
