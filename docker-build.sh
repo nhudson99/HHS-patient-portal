@@ -29,8 +29,8 @@ fi
 
 # Create .env if missing
 if [ ! -f .env ]; then
-    echo -e "${BLUE}📝 Creating .env...${NC}"
-    cp .env.example .env || { echo -e "${RED}❌ .env.example not found${NC}"; exit 1; }
+    echo -e "${BLUE}📝 Creating .env from .env.docker.example...${NC}"
+    cp .env.docker.example .env || cp .env.example .env || { echo -e "${RED}❌ .env.docker.example not found${NC}"; exit 1; }
 fi
 
 # Test Docker access
