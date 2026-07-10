@@ -23,6 +23,48 @@
           </button>
           <span v-if="adminSession" class="admin-role-badge">ADMIN</span>
           <span class="user-name">{{ userName }}</span>
+          <div
+            v-if="isProviderUser"
+            ref="providerNotificationRef"
+            class="provider-notification-wrapper"
+          >
+            <button
+              class="notification-btn"
+              :aria-expanded="showProviderNotifications"
+              aria-haspopup="menu"
+              aria-label="Provider alerts"
+              @click="toggleProviderNotifications"
+            >
+              <span class="notification-icon" aria-hidden="true">🔔</span>
+              <span
+                v-if="unreadProviderAlertCount > 0"
+                class="notification-badge"
+              >
+                {{ unreadProviderAlertCount }}
+              </span>
+            </button>
+            <div v-if="showProviderNotifications" class="notification-dropdown">
+              <div class="notification-dropdown-header">Alerts</div>
+              <div v-if="providerAlertLoadError" class="notification-status error">
+                {{ providerAlertLoadError }}
+              </div>
+              <div v-else-if="providerAlerts.length === 0" class="notification-status">
+                No alerts right now.
+              </div>
+              <ul v-else class="notification-list">
+                <li
+                  v-for="alert in providerAlerts"
+                  :key="alert.id"
+                  class="notification-item"
+                >
+                  <div class="notification-title">{{ alert.title }}</div>
+                  <div class="notification-meta">
+                    {{ alert.patientName }} • {{ formatAlertDateTime(alert.eventDate, alert.startTime) }}
+                  </div>
+                </li>
+              </ul>
+            </div>
+          </div>
           <button @click="handleLogout" class="logout-btn">Logout</button>
         </div>
       </div>
@@ -95,13 +137,30 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onMounted } from 'vue'
+import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { RouterView, RouterLink, useRoute, useRouter } from 'vue-router'
 import { logout, adminSession, clearAdminSession } from '@/store'
 
 type NavButton = {
   label: string
   to: string
+}
+
+type ProviderAlert = {
+  id: string
+  title: string
+  patientName: string
+  eventDate: string
+  startTime: string
+}
+
+type ProviderAlertEventRow = {
+  id?: string
+  event_type?: string
+  appointment_status?: string
+  patient_name?: string
+  event_date?: string
+  start_time?: string
 }
 
 const route = useRoute()
@@ -115,6 +174,15 @@ const featureRequestSuccess = ref(false)
 const featureRequestIssueUrl = ref('')
 const featureRequestIssueNumber = ref(0)
 const isSubmittingFeatureRequest = ref(false)
+const showProviderNotifications = ref(false)
+const providerNotificationRef = ref<HTMLElement | null>(null)
+const providerAlerts = ref<ProviderAlert[]>([])
+const providerAlertLoadError = ref('')
+const readProviderAlertIds = ref<Set<string>>(new Set())
+let providerAlertIntervalId: ReturnType<typeof globalThis.setInterval> | null = null
+
+const PROVIDER_ALERT_LOOKAHEAD_DAYS = 14
+const PROVIDER_ALERT_REFRESH_MS = 60000
 
 const loadUser = () => {
   const userStr = localStorage.getItem('currentUser')
@@ -173,6 +241,174 @@ const navButtons = computed<NavButton[]>(() => {
 const showFeatureRequestButton = computed(() => {
   return !!currentUser.value && currentUser.value.role === 'doctor' && showHeader.value
 })
+
+const isProviderUser = computed(() => {
+  return !!currentUser.value && currentUser.value.role === 'doctor' && !adminSession.value
+})
+
+const unreadProviderAlertCount = computed(() => {
+  return providerAlerts.value.filter((alert) => !readProviderAlertIds.value.has(alert.id)).length
+})
+
+function getProviderAlertStorageKey(): string {
+  const user = currentUser.value
+  if (!user) {
+    return ''
+  }
+  const identifier = user.username || user.name || 'provider'
+  return `providerReadAlerts:${identifier}`
+}
+
+function loadReadProviderAlertIds() {
+  const storageKey = getProviderAlertStorageKey()
+  if (!storageKey) {
+    readProviderAlertIds.value = new Set()
+    return
+  }
+
+  const raw = localStorage.getItem(storageKey)
+  if (!raw) {
+    readProviderAlertIds.value = new Set()
+    return
+  }
+
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) {
+      readProviderAlertIds.value = new Set(parsed.filter((id) => typeof id === 'string'))
+      return
+    }
+    readProviderAlertIds.value = new Set()
+  } catch {
+    readProviderAlertIds.value = new Set()
+  }
+}
+
+function saveReadProviderAlertIds() {
+  const storageKey = getProviderAlertStorageKey()
+  if (!storageKey) {
+    return
+  }
+  localStorage.setItem(storageKey, JSON.stringify(Array.from(readProviderAlertIds.value)))
+}
+
+function formatDateForApi(date: Date): string {
+  return date.toISOString().slice(0, 10)
+}
+
+function formatAlertDateTime(eventDate: string, startTime: string): string {
+  if (!startTime) {
+    return eventDate
+  }
+  const [hourValue, minuteValue] = startTime.split(':')
+  const hour = Number.parseInt(hourValue, 10)
+  const minute = Number.parseInt(minuteValue, 10)
+  if (Number.isNaN(hour) || Number.isNaN(minute)) {
+    return `${eventDate} ${startTime}`
+  }
+  const suffix = hour >= 12 ? 'PM' : 'AM'
+  const normalizedHour = hour % 12 === 0 ? 12 : hour % 12
+  const normalizedMinute = minute.toString().padStart(2, '0')
+  return `${eventDate} ${normalizedHour}:${normalizedMinute} ${suffix}`
+}
+
+function stopProviderAlertPolling() {
+  if (providerAlertIntervalId !== null) {
+    globalThis.clearInterval(providerAlertIntervalId)
+    providerAlertIntervalId = null
+  }
+}
+
+function startProviderAlertPolling() {
+  stopProviderAlertPolling()
+  providerAlertIntervalId = globalThis.setInterval(() => {
+    loadProviderAlerts()
+  }, PROVIDER_ALERT_REFRESH_MS)
+}
+
+function markProviderAlertsAsRead() {
+  if (providerAlerts.value.length === 0) {
+    return
+  }
+  const updatedReadIds = new Set(readProviderAlertIds.value)
+  for (const alert of providerAlerts.value) {
+    updatedReadIds.add(alert.id)
+  }
+  readProviderAlertIds.value = updatedReadIds
+  saveReadProviderAlertIds()
+}
+
+function toggleProviderNotifications() {
+  showProviderNotifications.value = !showProviderNotifications.value
+  if (showProviderNotifications.value) {
+    markProviderAlertsAsRead()
+  }
+}
+
+function closeProviderNotifications() {
+  showProviderNotifications.value = false
+}
+
+function handleClickOutsideNotifications(event: MouseEvent) {
+  const target = event.target as Node | null
+  if (!target || !providerNotificationRef.value) {
+    return
+  }
+  if (!providerNotificationRef.value.contains(target)) {
+    closeProviderNotifications()
+  }
+}
+
+async function loadProviderAlerts() {
+  if (!isProviderUser.value) {
+    providerAlerts.value = []
+    providerAlertLoadError.value = ''
+    return
+  }
+
+  providerAlertLoadError.value = ''
+  const startDate = new Date()
+  const endDate = new Date()
+  endDate.setDate(endDate.getDate() + PROVIDER_ALERT_LOOKAHEAD_DAYS)
+
+  try {
+    const response = await fetch(
+      `/api/events?start_date=${formatDateForApi(startDate)}&end_date=${formatDateForApi(endDate)}`,
+      {
+        headers: {
+          Authorization: `******'sessionToken')}`,
+        },
+      }
+    )
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}))
+      providerAlertLoadError.value = data.error || 'Unable to load alerts'
+      return
+    }
+
+    const data = await response.json()
+    const eventRows: ProviderAlertEventRow[] = Array.isArray(data.events) ? data.events : []
+    providerAlerts.value = eventRows
+      .filter((event) => event.event_type === 'appointment' && event.appointment_status === 'pending')
+      .map((event) => ({
+        id: String(event.id || ''),
+        title: 'Pending appointment request',
+        patientName: event.patient_name || 'Patient',
+        eventDate: String(event.event_date || ''),
+        startTime: String(event.start_time || ''),
+      }))
+      .filter((event) => event.id.length > 0)
+      .sort((left, right) => {
+        const leftStamp = `${left.eventDate} ${left.startTime}`
+        const rightStamp = `${right.eventDate} ${right.startTime}`
+        return leftStamp.localeCompare(rightStamp)
+      })
+  } catch (error) {
+    console.error('Provider alert loading error:', error)
+    providerAlertLoadError.value = 'Unable to load alerts'
+  }
+}
 
 function getFeatureRequestPage(): string {
   if (globalThis.window !== undefined) {
@@ -264,15 +500,48 @@ const handleLogout = () => {
 
 onMounted(() => {
   loadUser()
+  loadReadProviderAlertIds()
+  if (isProviderUser.value) {
+    loadProviderAlerts()
+    startProviderAlertPolling()
+  }
+  globalThis.document.addEventListener('click', handleClickOutsideNotifications)
 })
 
 watch(
   () => route.fullPath,
   () => {
     closeSidebar()
+    closeProviderNotifications()
     loadUser()
+    loadReadProviderAlertIds()
+    if (isProviderUser.value) {
+      loadProviderAlerts()
+    }
   }
 )
+
+watch(
+  isProviderUser,
+  (isProvider) => {
+    closeProviderNotifications()
+    if (isProvider) {
+      loadReadProviderAlertIds()
+      loadProviderAlerts()
+      startProviderAlertPolling()
+      return
+    }
+    stopProviderAlertPolling()
+    providerAlerts.value = []
+    providerAlertLoadError.value = ''
+  },
+  { immediate: false }
+)
+
+onBeforeUnmount(() => {
+  stopProviderAlertPolling()
+  globalThis.document.removeEventListener('click', handleClickOutsideNotifications)
+})
 </script>
 
 <style>
@@ -407,6 +676,105 @@ body {
   background: rgba(239, 68, 68, 0.25);
   border-color: rgba(239, 68, 68, 0.6);
   color: #fff;
+}
+
+.provider-notification-wrapper {
+  position: relative;
+}
+
+.notification-btn {
+  position: relative;
+  width: 2.25rem;
+  height: 2.25rem;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.9);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.notification-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.notification-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.notification-badge {
+  position: absolute;
+  top: -0.3rem;
+  right: -0.35rem;
+  min-width: 1.2rem;
+  height: 1.2rem;
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.2rem;
+  text-align: center;
+}
+
+.notification-dropdown {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  width: min(320px, 80vw);
+  max-height: 360px;
+  overflow-y: auto;
+  background: #fff;
+  color: #111827;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+  z-index: 3000;
+}
+
+.notification-dropdown-header {
+  padding: 0.7rem 0.9rem;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.notification-status {
+  padding: 0.8rem 0.9rem;
+  font-size: 0.9rem;
+  color: #374151;
+}
+
+.notification-status.error {
+  color: #b91c1c;
+}
+
+.notification-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.notification-item {
+  padding: 0.75rem 0.9rem;
+  border-top: 1px solid #f3f4f6;
+}
+
+.notification-title {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: #111827;
+}
+
+.notification-meta {
+  margin-top: 0.25rem;
+  color: #4b5563;
+  font-size: 0.8rem;
 }
 
 .admin-role-badge {
