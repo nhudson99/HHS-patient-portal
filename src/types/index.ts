@@ -42,6 +42,10 @@ export interface PatientProperty {
   property_id: number
   name: string
   description?: string | null
+  created_by_doctor_id?: string | null
+  updated_by_doctor_id?: string | null
+  created_by_name?: string | null
+  updated_by_name?: string | null
   created_at?: string
   updated_at?: string
 }

@@ -135,6 +135,8 @@ CREATE TABLE IF NOT EXISTS patient_properties (
     property_id INTEGER NOT NULL,
     name TEXT NOT NULL,
     description TEXT,
+    created_by_doctor_id UUID REFERENCES doctors(id) ON DELETE SET NULL,
+    updated_by_doctor_id UUID REFERENCES doctors(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (patient_id, property_id)
@@ -150,3 +152,6 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DE
 CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(session_token);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at ON user_sessions(expires_at);
+
+ALTER TABLE patient_properties ADD COLUMN IF NOT EXISTS created_by_doctor_id UUID REFERENCES doctors(id) ON DELETE SET NULL;
+ALTER TABLE patient_properties ADD COLUMN IF NOT EXISTS updated_by_doctor_id UUID REFERENCES doctors(id) ON DELETE SET NULL;

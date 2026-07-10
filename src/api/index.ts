@@ -181,7 +181,51 @@ export const healthApi = {
   },
 };
 
+/**
+ * Patient properties (clinical notes) API
+ */
+export const patientPropertiesApi = {
+  async list(patientId: string) {
+    return request<{ properties: import('@/types').PatientProperty[] }>(
+      `/api/patient-properties/${patientId}`,
+      { method: 'GET' },
+    );
+  },
+
+  async create(patientId: string, payload: { name: string; description?: string }) {
+    return request<{ property: import('@/types').PatientProperty }>(
+      `/api/patient-properties/${patientId}`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  async update(
+    patientId: string,
+    propertyId: number,
+    payload: { name?: string; description?: string; updated_at?: string },
+  ) {
+    return request<{ property: import('@/types').PatientProperty }>(
+      `/api/patient-properties/${patientId}/${propertyId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  async delete(patientId: string, propertyId: number) {
+    return request<{ message: string }>(
+      `/api/patient-properties/${patientId}/${propertyId}`,
+      { method: 'DELETE' },
+    );
+  },
+};
+
 export default {
   auth: authApi,
   health: healthApi,
+  patientProperties: patientPropertiesApi,
 };
