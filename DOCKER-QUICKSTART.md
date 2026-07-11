@@ -25,7 +25,7 @@ docker-compose logs -f
 
 ### Test Credentials
 - **Patient:** patient1 / Patient123!
-- **Doctor:** doctor1 / Doctor123!
+- **Provider:** doctor1 / Doctor123!
 
 ### Files
 

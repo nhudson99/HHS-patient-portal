@@ -125,9 +125,10 @@ onMounted(() => {
 const formattedRole = computed(() => {
   const role = currentUser.value?.role
   if (!role) return 'Unknown'
+  if (role === 'doctor') return 'Provider'
   return role.charAt(0).toUpperCase() + role.slice(1)
 })
-const homeRoute = computed(() => currentUser.value?.role === 'doctor' ? '/doctor' : '/patient')
+const homeRoute = computed(() => currentUser.value?.role === 'doctor' ? '/provider' : '/patient')
 const isForcedPasswordChange = computed(() => route.query.password === 'required')
 
 const form = reactive({

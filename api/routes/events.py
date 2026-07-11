@@ -1,6 +1,6 @@
 """
-Events routes for doctor calendar
-Handles calendar events, appointments, and doctor scheduling
+Events routes for provider calendar
+Handles calendar events, appointments, and provider scheduling
 """
 
 from flask import Blueprint, request, jsonify, current_app
@@ -84,7 +84,7 @@ def get_events():
         doctor = execute_query(doctor_query, (user['id'],), fetch_one=True)
         
         if not doctor:
-            return jsonify({'error': 'User is not a doctor'}), 403
+            return jsonify({'error': 'User is not a provider'}), 403
         
         doctor_id = doctor['id']
 
@@ -225,7 +225,7 @@ def create_event():
         doctor = execute_query(doctor_query, (user['id'],), fetch_one=True)
         
         if not doctor:
-            return jsonify({'error': 'User is not a doctor'}), 403
+            return jsonify({'error': 'User is not a provider'}), 403
         
         doctor_id = doctor['id']
         title = data['title']
@@ -285,7 +285,7 @@ def get_event(event_id):
         doctor = execute_query(doctor_query, (user['id'],), fetch_one=True)
         
         if not doctor:
-            return jsonify({'error': 'User is not a doctor'}), 403
+            return jsonify({'error': 'User is not a provider'}), 403
         
         # Get event (verify ownership)
         event_query = """
@@ -323,7 +323,7 @@ def update_event(event_id):
         doctor = execute_query(doctor_query, (user['id'],), fetch_one=True)
         
         if not doctor:
-            return jsonify({'error': 'User is not a doctor'}), 403
+            return jsonify({'error': 'User is not a provider'}), 403
         
         # Verify event ownership
         verify_query = "SELECT id FROM events WHERE id = %s AND doctor_id = %s"
@@ -384,7 +384,7 @@ def delete_event(event_id):
         doctor = execute_query(doctor_query, (user['id'],), fetch_one=True)
         
         if not doctor:
-            return jsonify({'error': 'User is not a doctor'}), 403
+            return jsonify({'error': 'User is not a provider'}), 403
         
         # Delete event (verify ownership)
         delete_query = "DELETE FROM events WHERE id = %s AND doctor_id = %s RETURNING id"

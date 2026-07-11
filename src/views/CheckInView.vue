@@ -18,7 +18,7 @@
               <span class="value">{{ formatDateTime(nextAppointment.appointment_date) }}</span>
             </div>
             <div v-if="nextAppointment.doctor_name" class="detail-row">
-              <span class="label">Doctor:</span>
+              <span class="label">Provider:</span>
               <span class="value">Dr. {{ nextAppointment.doctor_name }}</span>
             </div>
             <div class="detail-row">
@@ -114,7 +114,7 @@
             <span class="value">{{ formatDateTime(appointmentInfo.appointment_date) }}</span>
           </div>
           <div v-if="appointmentInfo.doctor_name" class="detail-row">
-            <span class="label">Doctor:</span>
+            <span class="label">Provider:</span>
             <span class="value">Dr. {{ appointmentInfo.doctor_name }}</span>
           </div>
           <div class="detail-row">

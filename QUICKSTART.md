@@ -37,7 +37,7 @@ npm run dev
 - **Username:** `patient1`
 - **Password:** `Patient123!`
 
-### Doctor Account
+### Provider Account
 - **Username:** `doctor1`
 - **Password:** `Doctor123!`
 
@@ -54,7 +54,7 @@ npm run dev
    - View medical documents
    - Download documents
 
-3. **Doctor Dashboard:**
+3. **Provider Dashboard:**
    - View all appointments
    - Confirm pending appointments
    - Manage patient records

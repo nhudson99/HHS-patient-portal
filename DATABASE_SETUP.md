@@ -54,11 +54,11 @@ The HHS Patient Portal now includes a **HIPAA-compliant** PostgreSQL database ba
 - Linked to users table
 
 #### `doctors`
-- Doctor profiles and credentials
+- Provider profiles and credentials
 - License number tracking
 
 #### `appointments`
-- Patient-doctor appointments
+- Patient-provider appointments
 - Status tracking (pending, confirmed, completed, cancelled)
 
 #### `medical_documents`

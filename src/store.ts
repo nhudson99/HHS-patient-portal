@@ -201,7 +201,7 @@ export function logout() {
 export function getDoctorName(doctorId: number | string): string {
   const numId = typeof doctorId === 'string' ? parseInt(doctorId) : doctorId
   const doctor = users.find(u => u.id === numId && u.role === 'doctor')
-  return doctor ? (doctor.name || doctor.username) : 'Unknown Doctor'
+  return doctor ? (doctor.name || doctor.username) : 'Unknown Provider'
 }
 
 export function getAppointmentsForDoctor(doctorId: number | string): Appointment[] {
