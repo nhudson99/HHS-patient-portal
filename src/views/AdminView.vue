@@ -45,10 +45,10 @@
         <div class="admin-tabs">
           <button
             class="tab-btn"
-            :class="{ active: activeSection === 'doctors' }"
-            @click="activeSection = 'doctors'"
+            :class="{ active: activeSection === 'providers' }"
+            @click="activeSection = 'providers'"
           >
-            Doctors
+            Providers
           </button>
           <button
             class="tab-btn"
@@ -69,40 +69,40 @@
         <div v-if="actionMessage" class="admin-success-banner">{{ actionMessage }}</div>
         <div v-if="actionError" class="admin-error-banner">{{ actionError }}</div>
 
-        <section v-if="activeSection === 'doctors'" class="admin-section">
+        <section v-if="activeSection === 'providers'" class="admin-section">
           <div class="section-header">
-            <h3>Doctors</h3>
+            <h3>Providers</h3>
             <div class="section-actions">
-              <button class="section-btn" @click="resetDoctorForm">Add Doctor</button>
-              <button class="section-btn secondary" @click="loadDoctors">Refresh</button>
+              <button class="section-btn" @click="resetProviderForm">Add Provider</button>
+              <button class="section-btn secondary" @click="loadProviders">Refresh</button>
             </div>
           </div>
 
-          <form class="entity-form" @submit.prevent="submitDoctor">
-            <h4>{{ editingDoctorId ? 'Edit Doctor' : 'Add Doctor' }}</h4>
+          <form class="entity-form" @submit.prevent="submitProvider">
+            <h4>{{ editingProviderId ? 'Edit Provider' : 'Add Provider' }}</h4>
             <div class="form-grid">
-              <input v-model="doctorForm.username" :disabled="!!editingDoctorId" placeholder="Username" required />
-              <input v-model="doctorForm.email" placeholder="Email" type="email" required />
-              <input v-model="doctorForm.firstName" placeholder="First Name" required />
-              <input v-model="doctorForm.lastName" placeholder="Last Name" required />
-              <input v-model="doctorForm.specialty" placeholder="Specialty" required />
-              <input v-model="doctorForm.licenseNumber" placeholder="License Number" required />
-              <input v-model="doctorForm.licenseState" placeholder="License State" />
-              <input v-model="doctorForm.phone" placeholder="Phone" />
-              <input v-model="doctorForm.officeAddress" placeholder="Office Address" class="span-2" />
+              <input v-model="providerForm.username" :disabled="!!editingProviderId" placeholder="Username" required />
+              <input v-model="providerForm.email" placeholder="Email" type="email" required />
+              <input v-model="providerForm.firstName" placeholder="First Name" required />
+              <input v-model="providerForm.lastName" placeholder="Last Name" required />
+              <input v-model="providerForm.specialty" placeholder="Specialty" required />
+              <input v-model="providerForm.licenseNumber" placeholder="License Number" required />
+              <input v-model="providerForm.licenseState" placeholder="License State" />
+              <input v-model="providerForm.phone" placeholder="Phone" />
+              <input v-model="providerForm.officeAddress" placeholder="Office Address" class="span-2" />
             </div>
             <label class="checkbox-row">
-              <input type="checkbox" v-model="doctorForm.isActive" />
+              <input type="checkbox" v-model="providerForm.isActive" />
               Active account
             </label>
             <div class="form-actions">
-              <button class="section-btn" type="submit">{{ editingDoctorId ? 'Save Doctor' : 'Create Doctor' }}</button>
-              <button class="section-btn secondary" type="button" @click="resetDoctorForm">Cancel</button>
+              <button class="section-btn" type="submit">{{ editingProviderId ? 'Save Provider' : 'Create Provider' }}</button>
+              <button class="section-btn secondary" type="button" @click="resetProviderForm">Cancel</button>
             </div>
           </form>
 
-          <div v-if="newDoctorPassword" class="temp-password">
-            Temporary doctor password: <strong>{{ newDoctorPassword }}</strong>
+          <div v-if="newProviderPassword" class="temp-password">
+            Temporary provider password: <strong>{{ newProviderPassword }}</strong>
           </div>
 
           <div class="table-wrap">
@@ -118,15 +118,15 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="doctor in doctors" :key="doctor.id">
-                  <td>{{ doctor.first_name }} {{ doctor.last_name }}</td>
-                  <td>{{ doctor.email }}</td>
-                  <td>{{ doctor.specialty }}</td>
-                  <td>{{ doctor.license_number }}</td>
-                  <td>{{ doctor.is_active ? 'Active' : 'Disabled' }}</td>
+                <tr v-for="provider in providers" :key="provider.id">
+                  <td>{{ provider.first_name }} {{ provider.last_name }}</td>
+                  <td>{{ provider.email }}</td>
+                  <td>{{ provider.specialty }}</td>
+                  <td>{{ provider.license_number }}</td>
+                  <td>{{ provider.is_active ? 'Active' : 'Disabled' }}</td>
                   <td class="actions-cell">
-                    <button class="link-btn" @click="editDoctor(doctor)">Edit</button>
-                    <button class="link-btn danger" @click="removeDoctor(doctor)">Delete</button>
+                    <button class="link-btn" @click="editProvider(provider)">Edit</button>
+                    <button class="link-btn danger" @click="removeProvider(provider)">Delete</button>
                   </td>
                 </tr>
               </tbody>
@@ -248,7 +248,7 @@ import { adminSession, setAdminSession } from '@/store'
 
 const ALLOWED_DOMAIN = 'hudsonitconsulting.com'
 
-interface DoctorRecord {
+interface ProviderRecord {
   id: string
   first_name: string
   last_name: string
@@ -288,7 +288,7 @@ interface ErrorLogRecord {
   created_at?: string
 }
 
-interface DoctorForm {
+interface ProviderForm {
   username: string
   email: string
   firstName: string
@@ -319,21 +319,21 @@ interface PatientForm {
 
 const isSigningIn = ref(false)
 const loginError = ref('')
-const activeSection = ref<'doctors' | 'patients' | 'logs'>('doctors')
-const doctors = ref<DoctorRecord[]>([])
+const activeSection = ref<'providers' | 'patients' | 'logs'>('providers')
+const providers = ref<ProviderRecord[]>([])
 const patients = ref<PatientRecord[]>([])
 const errorLogs = ref<ErrorLogRecord[]>([])
-const editingDoctorId = ref<string>('')
+const editingProviderId = ref<string>('')
 const editingPatientId = ref<string>('')
 const actionError = ref('')
 const actionMessage = ref('')
-const newDoctorPassword = ref('')
+const newProviderPassword = ref('')
 const newPatientPassword = ref('')
 
-const doctorForm = ref<DoctorForm>(createDoctorForm())
+const providerForm = ref<ProviderForm>(createProviderForm())
 const patientForm = ref<PatientForm>(createPatientForm())
 
-function createDoctorForm(): DoctorForm {
+function createProviderForm(): ProviderForm {
   return {
     username: '',
     email: '',
@@ -392,9 +392,9 @@ async function apiRequest(url: string, options: RequestInit = {}) {
   return res.json()
 }
 
-async function loadDoctors() {
+async function loadProviders() {
   const data = await apiRequest('/api/admin/doctors')
-  doctors.value = data.doctors ?? []
+  providers.value = data.doctors ?? []
 }
 
 async function loadPatients() {
@@ -413,7 +413,7 @@ async function loadAdminData() {
   }
   actionError.value = ''
   try {
-    await Promise.all([loadDoctors(), loadPatients(), loadErrorLogs()])
+    await Promise.all([loadProviders(), loadPatients(), loadErrorLogs()])
   } catch (err: unknown) {
     actionError.value = err instanceof Error ? err.message : 'Failed to load admin data.'
   }
@@ -424,9 +424,9 @@ function clearActionBanners() {
   actionMessage.value = ''
 }
 
-function resetDoctorForm() {
-  editingDoctorId.value = ''
-  doctorForm.value = createDoctorForm()
+function resetProviderForm() {
+  editingProviderId.value = ''
+  providerForm.value = createProviderForm()
 }
 
 function resetPatientForm() {
@@ -434,19 +434,19 @@ function resetPatientForm() {
   patientForm.value = createPatientForm()
 }
 
-function editDoctor(doctor: DoctorRecord) {
-  editingDoctorId.value = doctor.id
-  doctorForm.value = {
-    username: doctor.username ?? '',
-    email: doctor.email,
-    firstName: doctor.first_name,
-    lastName: doctor.last_name,
-    specialty: doctor.specialty,
-    licenseNumber: doctor.license_number,
-    licenseState: doctor.license_state ?? '',
-    phone: doctor.phone ?? '',
-    officeAddress: doctor.office_address ?? '',
-    isActive: doctor.is_active
+function editProvider(provider: ProviderRecord) {
+  editingProviderId.value = provider.id
+  providerForm.value = {
+    username: provider.username ?? '',
+    email: provider.email,
+    firstName: provider.first_name,
+    lastName: provider.last_name,
+    specialty: provider.specialty,
+    licenseNumber: provider.license_number,
+    licenseState: provider.license_state ?? '',
+    phone: provider.phone ?? '',
+    officeAddress: provider.office_address ?? '',
+    isActive: provider.is_active
   }
 }
 
@@ -469,30 +469,30 @@ function editPatient(patient: PatientRecord) {
   }
 }
 
-async function submitDoctor() {
+async function submitProvider() {
   clearActionBanners()
-  newDoctorPassword.value = ''
+  newProviderPassword.value = ''
 
   try {
-    if (editingDoctorId.value) {
-      await apiRequest(`/api/admin/doctors/${editingDoctorId.value}`, {
+    if (editingProviderId.value) {
+      await apiRequest(`/api/admin/doctors/${editingProviderId.value}`, {
         method: 'PUT',
-        body: JSON.stringify(doctorForm.value)
+        body: JSON.stringify(providerForm.value)
       })
-      actionMessage.value = 'Doctor updated successfully.'
+      actionMessage.value = 'Provider updated successfully.'
     } else {
       const created = await apiRequest('/api/admin/doctors', {
         method: 'POST',
-        body: JSON.stringify(doctorForm.value)
+        body: JSON.stringify(providerForm.value)
       })
-      actionMessage.value = 'Doctor created successfully.'
-      newDoctorPassword.value = created.temporaryPassword ?? ''
+      actionMessage.value = 'Provider created successfully.'
+      newProviderPassword.value = created.temporaryPassword ?? ''
     }
 
-    resetDoctorForm()
-    await loadDoctors()
+    resetProviderForm()
+    await loadProviders()
   } catch (err: unknown) {
-    actionError.value = err instanceof Error ? err.message : 'Failed to save doctor.'
+    actionError.value = err instanceof Error ? err.message : 'Failed to save provider.'
   }
 }
 
@@ -523,18 +523,18 @@ async function submitPatient() {
   }
 }
 
-async function removeDoctor(doctor: DoctorRecord) {
+async function removeProvider(provider: ProviderRecord) {
   clearActionBanners()
-  if (!confirm(`Delete doctor ${doctor.first_name} ${doctor.last_name}?`)) {
+  if (!confirm(`Delete provider ${provider.first_name} ${provider.last_name}?`)) {
     return
   }
 
   try {
-    await apiRequest(`/api/admin/doctors/${doctor.id}`, { method: 'DELETE' })
-    actionMessage.value = 'Doctor deleted successfully.'
-    await loadDoctors()
+    await apiRequest(`/api/admin/doctors/${provider.id}`, { method: 'DELETE' })
+    actionMessage.value = 'Provider deleted successfully.'
+    await loadProviders()
   } catch (err: unknown) {
-    actionError.value = err instanceof Error ? err.message : 'Failed to delete doctor.'
+    actionError.value = err instanceof Error ? err.message : 'Failed to delete provider.'
   }
 }
 
