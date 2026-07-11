@@ -23,6 +23,15 @@
           </button>
           <span v-if="adminSession" class="admin-role-badge">ADMIN</span>
           <span class="user-name">{{ userName }}</span>
+          <RouterLink
+            v-if="isPortalMessagingUser"
+            to="/messages"
+            class="messages-header-link"
+            aria-label="Open messages"
+          >
+            Messages
+            <span v-if="unreadMessageCount > 0" class="notification-badge">{{ unreadMessageCount }}</span>
+          </RouterLink>
           <div
             v-if="isProviderUser"
             ref="providerNotificationRef"
@@ -87,7 +96,13 @@
           class="sidebar-link"
           @click="closeSidebar"
         >
-          {{ button.label }}
+          <span>{{ button.label }}</span>
+          <span
+            v-if="button.to === '/messages' && unreadMessageCount > 0"
+            class="nav-unread-badge"
+          >
+            {{ unreadMessageCount }}
+          </span>
         </RouterLink>
       </nav>
     </aside>
@@ -140,6 +155,7 @@
 import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { RouterView, RouterLink, useRoute, useRouter } from 'vue-router'
 import { logout, adminSession, clearAdminSession } from '@/store'
+import { messagesApi } from '@/api'
 
 type NavButton = {
   label: string
@@ -183,6 +199,9 @@ let providerAlertIntervalId: ReturnType<typeof globalThis.setInterval> | null = 
 
 const PROVIDER_ALERT_LOOKAHEAD_DAYS = 14
 const PROVIDER_ALERT_REFRESH_MS = 60000
+const MESSAGE_UNREAD_REFRESH_MS = 30000
+const unreadMessageCount = ref(0)
+let messageUnreadIntervalId: ReturnType<typeof globalThis.setInterval> | null = null
 
 const loadUser = () => {
   const userStr = localStorage.getItem('currentUser')
@@ -213,6 +232,7 @@ const pageTitle = computed(() => {
   if (adminSession.value) return 'HHS Admin'
   if (route.path.startsWith('/profile')) return 'My Profile'
   if (route.path.startsWith('/patients')) return 'Patients'
+  if (route.path.startsWith('/messages')) return 'Messages'
   if (route.path.startsWith('/doctor')) return 'Doctor Dashboard'
   if (route.path.startsWith('/patient')) return 'Patient Dashboard'
   return 'Hudson Health System'
@@ -225,17 +245,25 @@ const navButtons = computed<NavButton[]>(() => {
     return [
       { label: 'Home', to: '/doctor' },
       { label: 'Patients', to: '/patients' },
+      { label: 'Messages', to: '/messages' },
       { label: 'Profile', to: '/profile' }
     ]
   }
   if (currentUser.value.role === 'patient') {
     return [
       { label: 'Home', to: '/patient' },
+      { label: 'Messages', to: '/messages' },
       { label: 'Check In', to: '/checkin' },
       { label: 'Profile', to: '/profile' }
     ]
   }
   return []
+})
+
+const isPortalMessagingUser = computed(() => {
+  return !!currentUser.value
+    && !adminSession.value
+    && (currentUser.value.role === 'doctor' || currentUser.value.role === 'patient')
 })
 
 const showFeatureRequestButton = computed(() => {
@@ -326,6 +354,33 @@ function startProviderAlertPolling() {
   }, PROVIDER_ALERT_REFRESH_MS)
 }
 
+function stopMessageUnreadPolling() {
+  if (messageUnreadIntervalId !== null) {
+    globalThis.clearInterval(messageUnreadIntervalId)
+    messageUnreadIntervalId = null
+  }
+}
+
+function startMessageUnreadPolling() {
+  stopMessageUnreadPolling()
+  messageUnreadIntervalId = globalThis.setInterval(() => {
+    loadUnreadMessageCount()
+  }, MESSAGE_UNREAD_REFRESH_MS)
+}
+
+async function loadUnreadMessageCount() {
+  if (!isPortalMessagingUser.value) {
+    unreadMessageCount.value = 0
+    return
+  }
+
+  const response = await messagesApi.getUnreadCount()
+  if (response.error || !response.data) {
+    return
+  }
+  unreadMessageCount.value = response.data.unread_count || 0
+}
+
 function markProviderAlertsAsRead() {
   if (providerAlerts.value.length === 0) {
     return
@@ -376,7 +431,7 @@ async function loadProviderAlerts() {
       `/api/events?start_date=${formatDateForApi(startDate)}&end_date=${formatDateForApi(endDate)}`,
       {
         headers: {
-          Authorization: `******'sessionToken')}`,
+          Authorization: `Bearer ${localStorage.getItem('sessionToken')}`,
         },
       }
     )
@@ -505,6 +560,10 @@ onMounted(() => {
     loadProviderAlerts()
     startProviderAlertPolling()
   }
+  if (isPortalMessagingUser.value) {
+    loadUnreadMessageCount()
+    startMessageUnreadPolling()
+  }
   globalThis.document.addEventListener('click', handleClickOutsideNotifications)
 })
 
@@ -517,6 +576,9 @@ watch(
     loadReadProviderAlertIds()
     if (isProviderUser.value) {
       loadProviderAlerts()
+    }
+    if (isPortalMessagingUser.value) {
+      loadUnreadMessageCount()
     }
   }
 )
@@ -538,8 +600,23 @@ watch(
   { immediate: false }
 )
 
+watch(
+  isPortalMessagingUser,
+  (canMessage) => {
+    if (canMessage) {
+      loadUnreadMessageCount()
+      startMessageUnreadPolling()
+      return
+    }
+    stopMessageUnreadPolling()
+    unreadMessageCount.value = 0
+  },
+  { immediate: false }
+)
+
 onBeforeUnmount(() => {
   stopProviderAlertPolling()
+  stopMessageUnreadPolling()
   globalThis.document.removeEventListener('click', handleClickOutsideNotifications)
 })
 </script>
@@ -643,7 +720,10 @@ body {
 }
 
 .sidebar-link {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
   padding: 0.7rem 0.85rem;
   color: rgba(255, 255, 255, 0.9);
   text-decoration: none;
@@ -659,6 +739,38 @@ body {
   background: rgba(255, 255, 255, 0.2);
   border-color: rgba(255, 255, 255, 0.35);
   font-weight: 600;
+}
+
+.nav-unread-badge {
+  background: #dc2626;
+  color: white;
+  border-radius: 999px;
+  min-width: 1.25rem;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.7rem;
+  text-align: center;
+  font-weight: 700;
+}
+
+.messages-header-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: rgba(255, 255, 255, 0.92);
+  text-decoration: none;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 6px;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  position: relative;
+}
+
+.messages-header-link:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.messages-header-link .notification-badge {
+  position: static;
 }
 
 .logout-btn {
