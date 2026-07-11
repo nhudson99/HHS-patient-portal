@@ -232,3 +232,124 @@ WHERE NOT EXISTS (
       AND existing.title = e.title
       AND existing.event_date = e.event_date
 );
+
+-- Sample messaging: DM between doctor1 and patient1, plus a care-team channel.
+WITH doctor1_user AS (
+    SELECT id FROM users WHERE username = 'doctor1' LIMIT 1
+),
+patient1_user AS (
+    SELECT id FROM users WHERE username = 'patient1' LIMIT 1
+),
+doctor2_user AS (
+    SELECT id FROM users WHERE username = 'doctor2' LIMIT 1
+),
+existing_dm AS (
+    SELECT c.id
+    FROM conversations c
+    WHERE c.type = 'dm'
+      AND EXISTS (
+          SELECT 1 FROM conversation_participants cp
+          JOIN doctor1_user d1 ON cp.user_id = d1.id
+          WHERE cp.conversation_id = c.id
+      )
+      AND EXISTS (
+          SELECT 1 FROM conversation_participants cp
+          JOIN patient1_user p1 ON cp.user_id = p1.id
+          WHERE cp.conversation_id = c.id
+      )
+    LIMIT 1
+),
+new_dm AS (
+    INSERT INTO conversations (type, title, created_by_user_id)
+    SELECT 'dm', NULL, d1.id
+    FROM doctor1_user d1
+    WHERE NOT EXISTS (SELECT 1 FROM existing_dm)
+    RETURNING id, created_by_user_id
+),
+resolved_dm AS (
+    SELECT id FROM existing_dm
+    UNION ALL
+    SELECT id FROM new_dm
+),
+dm_participants AS (
+    INSERT INTO conversation_participants (conversation_id, user_id, last_read_at)
+    SELECT rd.id, u.id, NOW()
+    FROM resolved_dm rd
+    CROSS JOIN (
+        SELECT id FROM doctor1_user
+        UNION
+        SELECT id FROM patient1_user
+    ) u
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM conversation_participants cp
+        WHERE cp.conversation_id = rd.id AND cp.user_id = u.id
+    )
+    RETURNING conversation_id
+),
+dm_message AS (
+    INSERT INTO messages (conversation_id, sender_user_id, body)
+    SELECT rd.id, d1.id, 'Hi John — welcome to secure messaging. Reply here anytime with questions about your care.'
+    FROM resolved_dm rd
+    CROSS JOIN doctor1_user d1
+    WHERE NOT EXISTS (
+        SELECT 1 FROM messages m WHERE m.conversation_id = rd.id
+    )
+    RETURNING id
+)
+SELECT 1 FROM dm_message
+UNION ALL
+SELECT 1 FROM dm_participants
+LIMIT 1;
+
+WITH doctor1_user AS (
+    SELECT id FROM users WHERE username = 'doctor1' LIMIT 1
+),
+doctor2_user AS (
+    SELECT id FROM users WHERE username = 'doctor2' LIMIT 1
+),
+patient1_user AS (
+    SELECT id FROM users WHERE username = 'patient1' LIMIT 1
+),
+existing_channel AS (
+    SELECT id FROM conversations
+    WHERE type = 'channel' AND title = 'Care Team — Smith'
+    LIMIT 1
+),
+new_channel AS (
+    INSERT INTO conversations (type, title, created_by_user_id)
+    SELECT 'channel', 'Care Team — Smith', d1.id
+    FROM doctor1_user d1
+    WHERE NOT EXISTS (SELECT 1 FROM existing_channel)
+    RETURNING id
+),
+resolved_channel AS (
+    SELECT id FROM existing_channel
+    UNION ALL
+    SELECT id FROM new_channel
+)
+INSERT INTO conversation_participants (conversation_id, user_id, last_read_at)
+SELECT rc.id, u.id, NOW()
+FROM resolved_channel rc
+CROSS JOIN (
+    SELECT id FROM doctor1_user
+    UNION
+    SELECT id FROM doctor2_user
+    UNION
+    SELECT id FROM patient1_user
+) u
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM conversation_participants cp
+    WHERE cp.conversation_id = rc.id AND cp.user_id = u.id
+);
+
+INSERT INTO messages (conversation_id, sender_user_id, body)
+SELECT c.id, d1.id, 'Care team channel for coordinating John Smith''s follow-up plan.'
+FROM conversations c
+CROSS JOIN (SELECT id FROM users WHERE username = 'doctor1' LIMIT 1) d1
+WHERE c.type = 'channel'
+  AND c.title = 'Care Team — Smith'
+  AND NOT EXISTS (
+      SELECT 1 FROM messages m WHERE m.conversation_id = c.id
+  );
