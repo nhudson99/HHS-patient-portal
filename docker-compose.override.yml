@@ -21,7 +21,9 @@ services:
       --debugger
 
   nginx:
-    # Live-mount the built frontend — run `npm run build` to pick up Vue changes
+    # Serves ./dist produced by the `frontend` compose service (see docker-compose.yml).
+    # `docker compose up` waits for that build; use ./dev.sh up (or --force-recreate frontend)
+    # so Vue/TS changes are rebuilt instead of reusing a stale exited frontend container.
     volumes:
       - ./dist:/usr/share/nginx/html:ro
       - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro

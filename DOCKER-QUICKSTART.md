@@ -4,8 +4,11 @@
 
 ### Start Services
 ```bash
-docker-compose up -d
+./dev.sh up
+# or: docker compose up -d --force-recreate frontend && docker compose up -d
 ```
+
+Compose builds the Vue frontend into `./dist` (service `frontend`) before nginx starts.
 
 ### Stop Services
 ```bash

@@ -47,7 +47,8 @@ build() {
 }
 
 start() {
-    echo -e "${BLUE}🚀 Starting services...${NC}"
+    echo -e "${BLUE}🚀 Starting services (Vue build + stack)...${NC}"
+    $SUDO_CMD docker compose up --force-recreate --no-deps frontend
     $SUDO_CMD docker compose up -d
     sleep 2
     echo -e "${BLUE}✅ Services started - checking health...${NC}"

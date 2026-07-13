@@ -20,12 +20,14 @@ if ! docker ps &> /dev/null; then
     DOCKER_CMD="sudo docker"
 fi
 
-# Start the services
+# Start the services (rebuild Vue into ./dist first)
 echo "🚀 Starting services with Docker Compose..."
 if [[ $DOCKER_CMD == *"sudo"* ]]; then
-    sudo docker-compose up -d
+    sudo docker compose up --force-recreate --no-deps frontend
+    sudo docker compose up -d
 else
-    docker-compose up -d
+    docker compose up --force-recreate --no-deps frontend
+    docker compose up -d
 fi
 
 # Wait for services to stabilize
