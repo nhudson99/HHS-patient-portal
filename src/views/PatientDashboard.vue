@@ -408,6 +408,7 @@ const formatDocumentType = (type: string) => {
     prescription: 'Prescription',
     imaging: 'Imaging Report',
     document: 'Document',
+    id_photo: 'Photo ID',
     other: 'Other Document'
   }
   return types[type] || type
@@ -419,6 +420,7 @@ const getDocumentIcon = (type: string) => {
     prescription: '💊',
     imaging: '🔬',
     document: '📄',
+    id_photo: '🪪',
     other: '📋'
   }
   return icons[type] || '📄'

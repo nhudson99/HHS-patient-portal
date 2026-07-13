@@ -59,6 +59,83 @@
       </form>
     </div>
 
+    <!-- ── ID photo capture ── -->
+    <div v-else-if="screen === 'photo'" class="kiosk-card photo-card">
+      <h2>Photo ID</h2>
+      <p class="kiosk-instruction">
+        {{ capturedBlob
+          ? 'Review your ID photo, then save it to your profile.'
+          : 'Hold your photo ID in front of the camera, then take a picture.' }}
+      </p>
+
+      <div class="camera-frame">
+        <video
+          v-show="!capturedBlob && cameraReady"
+          ref="videoEl"
+          class="camera-preview"
+          autoplay
+          playsinline
+          muted
+        ></video>
+        <img
+          v-if="capturedPreviewUrl"
+          :src="capturedPreviewUrl"
+          alt="Captured ID preview"
+          class="camera-preview"
+        />
+        <div v-if="!capturedBlob && !cameraReady && !cameraError" class="camera-placeholder">
+          Starting camera…
+        </div>
+        <div v-if="cameraError && !capturedBlob" class="camera-placeholder error">
+          {{ cameraError }}
+        </div>
+        <canvas ref="canvasEl" class="capture-canvas" aria-hidden="true"></canvas>
+      </div>
+
+      <p v-if="photoError" class="kiosk-error">{{ photoError }}</p>
+
+      <template v-if="!capturedBlob">
+        <button
+          type="button"
+          class="kiosk-btn primary"
+          :disabled="!cameraReady || uploadingPhoto"
+          @click="capturePhoto"
+        >
+          Take Photo
+        </button>
+        <label class="kiosk-btn secondary file-fallback">
+          Use Gallery / File
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/*"
+            capture="environment"
+            class="sr-only"
+            @change="onFileSelected"
+          />
+        </label>
+        <button type="button" class="kiosk-btn secondary" :disabled="uploadingPhoto" @click="skipPhoto">
+          Skip
+        </button>
+      </template>
+
+      <template v-else>
+        <button
+          type="button"
+          class="kiosk-btn primary"
+          :disabled="uploadingPhoto"
+          @click="uploadIdPhoto"
+        >
+          {{ uploadingPhoto ? 'Saving…' : 'Save ID Photo' }}
+        </button>
+        <button type="button" class="kiosk-btn secondary" :disabled="uploadingPhoto" @click="retakePhoto">
+          Retake
+        </button>
+        <button type="button" class="kiosk-btn secondary" :disabled="uploadingPhoto" @click="skipPhoto">
+          Skip
+        </button>
+      </template>
+    </div>
+
     <!-- ── Success / confirmation screen ── -->
     <div v-else-if="screen === 'success'" class="kiosk-card success-card">
       <div class="success-icon">✓</div>
@@ -80,6 +157,10 @@
         <div v-if="appointmentInfo?.reason" class="summary-row">
           <span class="summary-label">Reason</span>
           <span class="summary-value">{{ appointmentInfo.reason }}</span>
+        </div>
+        <div v-if="idPhotoSaved" class="summary-row">
+          <span class="summary-label">ID Photo</span>
+          <span class="summary-value">Saved to your profile</span>
         </div>
       </div>
 
@@ -104,17 +185,204 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 
 // ── State ─────────────────────────────────────────────────────────────────────
-type Screen = 'welcome' | 'form' | 'success'
+type Screen = 'welcome' | 'form' | 'photo' | 'success'
 
 const screen = ref<Screen>('welcome')
 const loading = ref(false)
 const appointmentInfo = ref<any>(null)
 const checkedInName = ref('')
+const idPhotoSaved = ref(false)
 
 const form = ref({ fullName: '', dob: '', appointmentTime: '' })
+
+// ── Photo capture ─────────────────────────────────────────────────────────────
+const videoEl = ref<HTMLVideoElement | null>(null)
+const canvasEl = ref<HTMLCanvasElement | null>(null)
+const cameraReady = ref(false)
+const cameraError = ref('')
+const photoError = ref('')
+const capturedBlob = ref<Blob | null>(null)
+const capturedPreviewUrl = ref('')
+const uploadingPhoto = ref(false)
+
+let mediaStream: MediaStream | null = null
+
+async function startCamera() {
+  stopCamera()
+  cameraError.value = ''
+  cameraReady.value = false
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+    cameraError.value = 'Camera is not available on this device. You can upload a photo instead.'
+    return
+  }
+
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+      audio: false,
+    })
+    await nextTick()
+    if (videoEl.value) {
+      videoEl.value.srcObject = mediaStream
+      await videoEl.value.play()
+      cameraReady.value = true
+    }
+  } catch (err) {
+    console.error('Camera start failed:', err)
+    cameraError.value = 'Unable to access the camera. You can upload a photo instead.'
+  }
+}
+
+function stopCamera() {
+  if (mediaStream) {
+    for (const track of mediaStream.getTracks()) {
+      track.stop()
+    }
+    mediaStream = null
+  }
+  if (videoEl.value) {
+    videoEl.value.srcObject = null
+  }
+  cameraReady.value = false
+}
+
+function clearCapturedPhoto() {
+  capturedBlob.value = null
+  if (capturedPreviewUrl.value) {
+    URL.revokeObjectURL(capturedPreviewUrl.value)
+    capturedPreviewUrl.value = ''
+  }
+}
+
+function capturePhoto() {
+  photoError.value = ''
+  const video = videoEl.value
+  const canvas = canvasEl.value
+  if (!video || !canvas || !cameraReady.value) return
+
+  const width = video.videoWidth || 1280
+  const height = video.videoHeight || 720
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) {
+    photoError.value = 'Could not capture photo. Please try again.'
+    return
+  }
+  ctx.drawImage(video, 0, 0, width, height)
+  canvas.toBlob(
+    (blob) => {
+      if (!blob) {
+        photoError.value = 'Could not capture photo. Please try again.'
+        return
+      }
+      clearCapturedPhoto()
+      capturedBlob.value = blob
+      capturedPreviewUrl.value = URL.createObjectURL(blob)
+      stopCamera()
+      resetInactivityTimer()
+    },
+    'image/jpeg',
+    0.85,
+  )
+}
+
+function onFileSelected(event: Event) {
+  photoError.value = ''
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
+  if (!file.type.startsWith('image/')) {
+    photoError.value = 'Please select a JPEG or PNG image.'
+    input.value = ''
+    return
+  }
+
+  clearCapturedPhoto()
+  capturedBlob.value = file
+  capturedPreviewUrl.value = URL.createObjectURL(file)
+  stopCamera()
+  input.value = ''
+  resetInactivityTimer()
+}
+
+async function retakePhoto() {
+  photoError.value = ''
+  clearCapturedPhoto()
+  await startCamera()
+  resetInactivityTimer()
+}
+
+async function uploadIdPhoto() {
+  if (!capturedBlob.value) return
+
+  uploadingPhoto.value = true
+  photoError.value = ''
+  resetInactivityTimer()
+
+  try {
+    const formData = new FormData()
+    const filename = capturedBlob.value instanceof File
+      ? capturedBlob.value.name || 'id-photo.jpg'
+      : 'id-photo.jpg'
+    formData.append('photo', capturedBlob.value, filename)
+    formData.append('patient_name', form.value.fullName.trim())
+    formData.append('date_of_birth', form.value.dob)
+
+    const res = await fetch('/api/documents/kiosk/id-photo', {
+      method: 'POST',
+      body: formData,
+    })
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      photoError.value = data.error || 'Failed to save ID photo. Please try again or skip.'
+      return
+    }
+
+    idPhotoSaved.value = true
+    goToSuccess()
+  } catch (e) {
+    console.error('ID photo upload error:', e)
+    photoError.value = 'Failed to save ID photo. Please try again or skip.'
+  } finally {
+    uploadingPhoto.value = false
+  }
+}
+
+function skipPhoto() {
+  goToSuccess()
+}
+
+function goToSuccess() {
+  stopCamera()
+  clearCapturedPhoto()
+  photoError.value = ''
+  cameraError.value = ''
+  screen.value = 'success'
+  clearInactivityTimer()
+  startCountdown()
+}
+
+watch(screen, async (next) => {
+  if (next === 'photo') {
+    clearCapturedPhoto()
+    photoError.value = ''
+    await startCamera()
+    resetInactivityTimer()
+  } else {
+    stopCamera()
+  }
+})
 
 // ── Countdown (success screen only) ──────────────────────────────────────────
 const RESET_AFTER_SECS = 10
@@ -124,7 +392,8 @@ const countdownPct = computed(() => (countdownSecs.value / RESET_AFTER_SECS) * 1
 let countdownTimer: ReturnType<typeof setInterval> | null = null
 let inactivityTimer: ReturnType<typeof setTimeout> | null = null
 
-const INACTIVITY_MS = 10_000 // 10 s of no interaction resets from any screen
+const INACTIVITY_MS = 10_000
+const PHOTO_INACTIVITY_MS = 60_000
 
 function startCountdown() {
   countdownSecs.value = RESET_AFTER_SECS
@@ -140,11 +409,12 @@ function stopCountdown() {
   countdownTimer = null
 }
 
-// ── Inactivity reset (fires from form/welcome if user walks away) ─────────────
+// ── Inactivity reset (fires from form/photo if user walks away) ─────────────
 function resetInactivityTimer() {
   clearTimeout(inactivityTimer!)
-  if (screen.value !== 'welcome') {
-    inactivityTimer = setTimeout(() => reset(), INACTIVITY_MS)
+  if (screen.value !== 'welcome' && screen.value !== 'success') {
+    const timeout = screen.value === 'photo' ? PHOTO_INACTIVITY_MS : INACTIVITY_MS
+    inactivityTimer = setTimeout(() => reset(), timeout)
   }
 }
 
@@ -157,11 +427,17 @@ function clearInactivityTimer() {
 function reset() {
   stopCountdown()
   clearInactivityTimer()
+  stopCamera()
+  clearCapturedPhoto()
   screen.value = 'welcome'
   form.value = { fullName: '', dob: '', appointmentTime: '' }
   appointmentInfo.value = null
   checkedInName.value = ''
+  idPhotoSaved.value = false
   loading.value = false
+  uploadingPhoto.value = false
+  photoError.value = ''
+  cameraError.value = ''
 }
 
 // ── API: look up appointment then check in ────────────────────────────────────
@@ -184,11 +460,10 @@ async function handleCheckIn() {
 
     if (!lookupRes.ok) {
       // Patient not found — alert already sent server-side; show success anyway
+      // Skip photo step — no patient profile to attach an ID photo to
       checkedInName.value = patientName
       appointmentInfo.value = null
-      screen.value = 'success'
-      clearInactivityTimer()
-      startCountdown()
+      goToSuccess()
       return
     }
 
@@ -208,18 +483,17 @@ async function handleCheckIn() {
     checkedInName.value = patientName
     // Show what we found even if the final checkin call failed
     appointmentInfo.value = checkinRes.ok ? appointment : null
-    screen.value = 'success'
-    clearInactivityTimer()
-    startCountdown()
+
+    // Step 3: capture ID photo for the matched patient profile
+    screen.value = 'photo'
+    resetInactivityTimer()
 
   } catch (e) {
     console.error('Kiosk check-in error:', e)
     // Network/unexpected error — still send to success to avoid confusing patients
     checkedInName.value = patientName
     appointmentInfo.value = null
-    screen.value = 'success'
-    clearInactivityTimer()
-    startCountdown()
+    goToSuccess()
   } finally {
     loading.value = false
   }
@@ -245,6 +519,8 @@ onMounted(() => {
 onUnmounted(() => {
   stopCountdown()
   clearInactivityTimer()
+  stopCamera()
+  clearCapturedPhoto()
   globalThis.removeEventListener('mousemove', resetInactivityTimer)
   globalThis.removeEventListener('touchstart', resetInactivityTimer)
 })
@@ -271,6 +547,11 @@ onUnmounted(() => {
   width: 100%;
   text-align: center;
   animation: fadeSlideIn 0.3s ease-out;
+}
+
+.photo-card {
+  max-width: 640px;
+  padding: 40px 36px;
 }
 
 @keyframes fadeSlideIn {
@@ -324,6 +605,8 @@ h2 {
   cursor: pointer;
   transition: transform 0.15s, box-shadow 0.15s;
   margin-bottom: 12px;
+  box-sizing: border-box;
+  text-align: center;
 }
 
 .kiosk-btn:last-child { margin-bottom: 0; }
@@ -345,6 +628,7 @@ h2 {
   background: #1e40af;
   color: #ffffff;
   cursor: wait;
+  opacity: 0.85;
 }
 
 .kiosk-btn.secondary {
@@ -353,13 +637,72 @@ h2 {
   box-shadow: none;
 }
 
-.kiosk-btn.secondary:hover {
+.kiosk-btn.secondary:hover:not(:disabled) {
   background: #e3e6ec;
+}
+
+.kiosk-btn.secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .kiosk-btn.big {
   padding: 20px;
   font-size: 1.25rem;
+}
+
+.file-fallback {
+  cursor: pointer;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Camera ────────────────────────────────────────────────────────────────── */
+.camera-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #0f172a;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+.camera-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.camera-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: #cbd5e1;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.camera-placeholder.error {
+  color: #fecaca;
+}
+
+.capture-canvas {
+  display: none;
 }
 
 /* ── Form ──────────────────────────────────────────────────────────────────── */
@@ -369,7 +712,7 @@ h2 {
   margin-bottom: 22px;
 }
 
-label {
+.kiosk-form label {
   display: block;
   font-weight: 600;
   color: #37474f;
@@ -478,5 +821,18 @@ input:focus {
 .countdown-label {
   font-size: 0.85rem;
   color: #90a4ae;
+}
+
+@media (max-width: 600px) {
+  .kiosk-card {
+    padding: 36px 24px;
+  }
+
+  .photo-card {
+    padding: 28px 20px;
+  }
+
+  h1 { font-size: 2rem; }
+  h2 { font-size: 1.5rem; }
 }
 </style>

@@ -178,6 +178,81 @@ def serialize_document(doc):
     return result
 
 
+KIOSK_ID_PHOTO_EXTENSIONS = {'jpg', 'jpeg', 'png'}
+KIOSK_ID_PHOTO_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
+
+
+@documents_bp.route('/kiosk/id-photo', methods=['POST'])
+def upload_kiosk_id_photo():
+    """
+    POST /api/documents/kiosk/id-photo
+    No auth — kiosk check-in uploads an ID photo for a patient matched by name + DOB.
+    Expects multipart form: photo (file), patient_name, date_of_birth.
+    """
+    try:
+        patient_name = (request.form.get('patient_name') or '').strip()
+        dob = (request.form.get('date_of_birth') or '').strip()
+
+        if not patient_name or not dob:
+            return jsonify({'error': 'Full name and date of birth are required'}), 400
+
+        if 'photo' not in request.files:
+            return jsonify({'error': 'No photo provided'}), 400
+
+        photo = request.files['photo']
+        if not photo or not photo.filename:
+            return jsonify({'error': 'No photo selected'}), 400
+
+        original_name = secure_filename(photo.filename) or 'id-photo.jpg'
+        file_ext = get_file_extension(original_name)
+        if file_ext not in KIOSK_ID_PHOTO_EXTENSIONS:
+            return jsonify({'error': 'Only JPEG and PNG photos are allowed'}), 400
+
+        # Bound size without relying solely on MAX_CONTENT_LENGTH
+        photo.stream.seek(0, os.SEEK_END)
+        size = photo.stream.tell()
+        photo.stream.seek(0)
+        if size > KIOSK_ID_PHOTO_MAX_BYTES:
+            return jsonify({'error': 'Photo exceeds maximum size of 5 MB'}), 400
+
+        patient_query = """
+            SELECT id FROM patients
+            WHERE LOWER(CONCAT(first_name, ' ', last_name)) = LOWER(%s)
+              AND date_of_birth = %s
+        """
+        patient = execute_query(patient_query, (patient_name, dob), fetch_one=True)
+        if not patient:
+            return jsonify({'error': 'Patient not found'}), 404
+
+        stored_path, file_size = _save_file_to_storage(photo, original_name)
+        title = f"ID Photo - Kiosk Check-in {date.today().isoformat()}"
+
+        insert_query = """
+            INSERT INTO medical_documents
+            (patient_id, doctor_id, document_type, title, description, file_path, file_name,
+             file_size, document_date)
+            VALUES (%s, NULL, 'id_photo', %s, %s, %s, %s, %s, CURRENT_DATE)
+            RETURNING id, patient_id, doctor_id, document_type, title, description,
+                      file_path, file_name, file_size, document_date,
+                      created_at, updated_at
+        """
+        description = 'Captured during kiosk check-in'
+        doc = execute_query(
+            insert_query,
+            (patient['id'], title, description, stored_path, original_name, file_size),
+            fetch_one=True,
+        )
+
+        return jsonify({
+            'message': 'ID photo saved',
+            'document': serialize_document(doc),
+        }), 201
+
+    except Exception:
+        current_app.logger.exception('Kiosk ID photo upload error')
+        return jsonify({'error': 'Failed to save ID photo'}), 500
+
+
 @documents_bp.route('/<patient_id>', methods=['GET'])
 @authenticate
 def list_documents(patient_id):
