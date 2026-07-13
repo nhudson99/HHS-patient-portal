@@ -131,7 +131,8 @@
           <p>Loading documents...</p>
         </div>
         <div v-else-if="documents.length === 0" class="empty-state">
-          <p>No medical documents available</p>
+          <p>No shared medical documents available</p>
+          <p class="empty-hint">Documents shared by your care team will appear here.</p>
         </div>
         <div v-else class="documents-list">
           <div 
@@ -524,6 +525,12 @@ watch(activeTab, (newTab) => {
   padding: 60px 20px;
   color: #999;
   font-size: 16px;
+}
+
+.empty-hint {
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  color: #9ca3af;
 }
 
 .appointments-list, .documents-list {

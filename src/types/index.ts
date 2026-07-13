@@ -61,8 +61,69 @@ export interface PatientDocument {
   file_name: string
   file_size: number
   document_date: string
+  patient_visible?: boolean
   created_at?: string
   updated_at?: string
+}
+
+export type AllergySeverity = 'mild' | 'moderate' | 'severe' | 'unknown'
+export type AllergyStatus = 'active' | 'inactive'
+export type MedicationStatus = 'active' | 'discontinued' | 'completed'
+export type ProblemStatus = 'active' | 'resolved' | 'inactive'
+
+export interface Allergy {
+  id: string
+  patient_id: string
+  allergen: string
+  reaction?: string | null
+  severity: AllergySeverity
+  status: AllergyStatus
+  notes?: string | null
+  recorded_at?: string
+  created_by_doctor_id?: string | null
+  created_by_name?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface Medication {
+  id: string
+  patient_id: string
+  name: string
+  dosage?: string | null
+  frequency?: string | null
+  route?: string | null
+  status: MedicationStatus
+  start_date?: string | null
+  end_date?: string | null
+  notes?: string | null
+  prescribed_by_doctor_id?: string | null
+  prescribed_by_name?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface Problem {
+  id: string
+  patient_id: string
+  name: string
+  status: ProblemStatus
+  onset_date?: string | null
+  resolved_date?: string | null
+  notes?: string | null
+  created_by_doctor_id?: string | null
+  created_by_name?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface ChartSummary {
+  allergies: Allergy[]
+  medications: Medication[]
+  problems: Problem[]
+  allergy_count: number
+  medication_count: number
+  problem_count: number
 }
 
 export interface MedicalDocument {

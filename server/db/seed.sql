@@ -353,3 +353,105 @@ WHERE c.type = 'channel'
   AND NOT EXISTS (
       SELECT 1 FROM messages m WHERE m.conversation_id = c.id
   );
+
+-- Sample chart data for patient1 (provider chart demo).
+INSERT INTO allergies (
+    patient_id, allergen, reaction, severity, status, notes, created_by_doctor_id
+)
+SELECT p.id, a.allergen, a.reaction, a.severity, a.status, a.notes, d.id
+FROM (
+    VALUES
+        ('Penicillin', 'Rash and hives', 'moderate', 'active', 'Avoid all beta-lactam antibiotics'),
+        ('Peanuts', 'Anaphylaxis', 'severe', 'active', 'Carries epinephrine auto-injector')
+) AS a(allergen, reaction, severity, status, notes)
+JOIN users pu ON pu.username = 'patient1'
+JOIN patients p ON p.user_id = pu.id
+JOIN users du ON du.username = 'doctor1'
+JOIN doctors d ON d.user_id = du.id
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM allergies existing
+    WHERE existing.patient_id = p.id
+      AND existing.allergen = a.allergen
+);
+
+INSERT INTO medications (
+    patient_id, name, dosage, frequency, route, status, start_date, notes, prescribed_by_doctor_id
+)
+SELECT p.id, m.name, m.dosage, m.frequency, m.route, m.status, m.start_date, m.notes, d.id
+FROM (
+    VALUES
+        ('Lisinopril', '10 mg', 'Once daily', 'Oral', 'active', '2025-01-15'::date, 'Blood pressure control'),
+        ('Metformin', '500 mg', 'Twice daily', 'Oral', 'active', '2024-06-01'::date, 'Type 2 diabetes')
+) AS m(name, dosage, frequency, route, status, start_date, notes)
+JOIN users pu ON pu.username = 'patient1'
+JOIN patients p ON p.user_id = pu.id
+JOIN users du ON du.username = 'doctor1'
+JOIN doctors d ON d.user_id = du.id
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM medications existing
+    WHERE existing.patient_id = p.id
+      AND existing.name = m.name
+);
+
+INSERT INTO problems (
+    patient_id, name, status, onset_date, notes, created_by_doctor_id
+)
+SELECT p.id, pr.name, pr.status, pr.onset_date, pr.notes, d.id
+FROM (
+    VALUES
+        ('Hypertension', 'active', '2024-11-01'::date, 'Well controlled on lisinopril'),
+        ('Type 2 Diabetes Mellitus', 'active', '2024-05-20'::date, 'A1C trending down')
+) AS pr(name, status, onset_date, notes)
+JOIN users pu ON pu.username = 'patient1'
+JOIN patients p ON p.user_id = pu.id
+JOIN users du ON du.username = 'doctor1'
+JOIN doctors d ON d.user_id = du.id
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM problems existing
+    WHERE existing.patient_id = p.id
+      AND existing.name = pr.name
+);
+
+-- Sample documents: one patient-visible, one provider-only.
+INSERT INTO medical_documents (
+    patient_id, doctor_id, document_type, title, description,
+    file_path, file_name, file_size, document_date, patient_visible
+)
+SELECT p.id, d.id, doc.document_type, doc.title, doc.description,
+       doc.file_path, doc.file_name, doc.file_size, doc.document_date, doc.patient_visible
+FROM (
+    VALUES
+        (
+            'lab_result',
+            'Annual Labs Summary',
+            'Shared lab summary for patient portal',
+            'seed/annual-labs-summary.txt',
+            'annual-labs-summary.txt',
+            128,
+            '2026-06-01'::date,
+            TRUE
+        ),
+        (
+            'document',
+            'Internal Chart Review Notes',
+            'Provider-only clinical notes',
+            'seed/internal-chart-review.txt',
+            'internal-chart-review.txt',
+            256,
+            '2026-06-15'::date,
+            FALSE
+        )
+) AS doc(document_type, title, description, file_path, file_name, file_size, document_date, patient_visible)
+JOIN users pu ON pu.username = 'patient1'
+JOIN patients p ON p.user_id = pu.id
+JOIN users du ON du.username = 'doctor1'
+JOIN doctors d ON d.user_id = du.id
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM medical_documents existing
+    WHERE existing.patient_id = p.id
+      AND existing.title = doc.title
+);

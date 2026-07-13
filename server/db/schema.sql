@@ -100,6 +100,57 @@ CREATE TABLE IF NOT EXISTS medical_documents (
     file_name TEXT NOT NULL,
     file_size BIGINT,
     document_date DATE,
+    patient_visible BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE medical_documents
+    ADD COLUMN IF NOT EXISTS patient_visible BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE TABLE IF NOT EXISTS allergies (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    allergen TEXT NOT NULL,
+    reaction TEXT,
+    severity TEXT NOT NULL DEFAULT 'unknown'
+        CHECK (severity IN ('mild', 'moderate', 'severe', 'unknown')),
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'inactive')),
+    notes TEXT,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by_doctor_id UUID REFERENCES doctors(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS medications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    dosage TEXT,
+    frequency TEXT,
+    route TEXT,
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'discontinued', 'completed')),
+    start_date DATE,
+    end_date DATE,
+    notes TEXT,
+    prescribed_by_doctor_id UUID REFERENCES doctors(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS problems (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'resolved', 'inactive')),
+    onset_date DATE,
+    resolved_date DATE,
+    notes TEXT,
+    created_by_doctor_id UUID REFERENCES doctors(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -148,6 +199,11 @@ CREATE INDEX IF NOT EXISTS idx_appointments_patient_date ON appointments(patient
 CREATE INDEX IF NOT EXISTS idx_appointments_doctor_date ON appointments(doctor_id, appointment_date DESC);
 CREATE INDEX IF NOT EXISTS idx_events_doctor_date ON events(doctor_id, event_date);
 CREATE INDEX IF NOT EXISTS idx_documents_patient ON medical_documents(patient_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_documents_patient_visible
+    ON medical_documents(patient_id, patient_visible, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_allergies_patient ON allergies(patient_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_medications_patient ON medications(patient_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_problems_patient ON problems(patient_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(session_token);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id);
