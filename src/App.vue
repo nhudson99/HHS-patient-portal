@@ -150,6 +150,25 @@
       </div>
     </div>
     <RouterView />
+    <div
+      v-if="messageToastVisible"
+      class="message-toast"
+      role="status"
+      aria-live="polite"
+    >
+      <button type="button" class="message-toast-body" @click="openMessagesFromToast">
+        <strong>New message</strong>
+        <span>{{ messageToastText }}</span>
+      </button>
+      <button
+        type="button"
+        class="message-toast-dismiss"
+        aria-label="Dismiss message notification"
+        @click="dismissMessageToast"
+      >
+        ✕
+      </button>
+    </div>
   </div>
 </template>
 
@@ -201,9 +220,14 @@ let providerAlertIntervalId: ReturnType<typeof globalThis.setInterval> | null = 
 
 const PROVIDER_ALERT_LOOKAHEAD_DAYS = 14
 const PROVIDER_ALERT_REFRESH_MS = 60000
-const MESSAGE_UNREAD_REFRESH_MS = 30000
+const MESSAGE_UNREAD_REFRESH_MS = 5000
+const MESSAGE_TOAST_MS = 6000
 const unreadMessageCount = ref(0)
+const messageToastVisible = ref(false)
+const messageToastText = ref('')
 let messageUnreadIntervalId: ReturnType<typeof globalThis.setInterval> | null = null
+let messageToastTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null
+let previousUnreadCount: number | null = null
 
 const loadUser = () => {
   const userStr = localStorage.getItem('currentUser')
@@ -366,13 +390,44 @@ function stopMessageUnreadPolling() {
 function startMessageUnreadPolling() {
   stopMessageUnreadPolling()
   messageUnreadIntervalId = globalThis.setInterval(() => {
-    loadUnreadMessageCount()
+    void loadUnreadMessageCount()
   }, MESSAGE_UNREAD_REFRESH_MS)
+}
+
+function dismissMessageToast() {
+  messageToastVisible.value = false
+  messageToastText.value = ''
+  if (messageToastTimeoutId !== null) {
+    globalThis.clearTimeout(messageToastTimeoutId)
+    messageToastTimeoutId = null
+  }
+}
+
+function showMessageToast(text: string) {
+  messageToastText.value = text
+  messageToastVisible.value = true
+  if (messageToastTimeoutId !== null) {
+    globalThis.clearTimeout(messageToastTimeoutId)
+  }
+  messageToastTimeoutId = globalThis.setTimeout(() => {
+    dismissMessageToast()
+  }, MESSAGE_TOAST_MS)
+}
+
+function openMessagesFromToast() {
+  dismissMessageToast()
+  router.push('/messages')
 }
 
 async function loadUnreadMessageCount() {
   if (!isPortalMessagingUser.value) {
     unreadMessageCount.value = 0
+    previousUnreadCount = 0
+    dismissMessageToast()
+    return
+  }
+
+  if (typeof document !== 'undefined' && document.hidden) {
     return
   }
 
@@ -380,7 +435,31 @@ async function loadUnreadMessageCount() {
   if (response.error || !response.data) {
     return
   }
-  unreadMessageCount.value = response.data.unread_count || 0
+
+  const nextCount = response.data.unread_count || 0
+  const previous = previousUnreadCount
+  unreadMessageCount.value = nextCount
+  previousUnreadCount = nextCount
+
+  if (
+    previous !== null
+    && nextCount > previous
+    && isProviderUser.value
+    && route.path !== '/messages'
+  ) {
+    const added = nextCount - previous
+    showMessageToast(
+      added === 1
+        ? 'You have a new unread message.'
+        : `You have ${added} new unread messages.`,
+    )
+  }
+}
+
+function onMessageUnreadVisibilityChange() {
+  if (typeof document !== 'undefined' && !document.hidden && isPortalMessagingUser.value) {
+    void loadUnreadMessageCount()
+  }
 }
 
 function markProviderAlertsAsRead() {
@@ -573,6 +652,7 @@ onMounted(() => {
     startMessageUnreadPolling()
   }
   globalThis.document.addEventListener('click', handleClickOutsideNotifications)
+  globalThis.document.addEventListener('visibilitychange', onMessageUnreadVisibilityChange)
 })
 
 watch(
@@ -587,6 +667,9 @@ watch(
     }
     if (isPortalMessagingUser.value) {
       loadUnreadMessageCount()
+    }
+    if (route.path === '/messages') {
+      dismissMessageToast()
     }
   }
 )
@@ -604,6 +687,7 @@ watch(
     stopProviderAlertPolling()
     providerAlerts.value = []
     providerAlertLoadError.value = ''
+    dismissMessageToast()
   },
   { immediate: false }
 )
@@ -618,6 +702,8 @@ watch(
     }
     stopMessageUnreadPolling()
     unreadMessageCount.value = 0
+    previousUnreadCount = null
+    dismissMessageToast()
   },
   { immediate: false }
 )
@@ -625,7 +711,9 @@ watch(
 onBeforeUnmount(() => {
   stopProviderAlertPolling()
   stopMessageUnreadPolling()
+  dismissMessageToast()
   globalThis.document.removeEventListener('click', handleClickOutsideNotifications)
+  globalThis.document.removeEventListener('visibilitychange', onMessageUnreadVisibilityChange)
 })
 </script>
 
@@ -870,6 +958,60 @@ body {
   font-weight: 700;
   line-height: 1.2rem;
   text-align: center;
+}
+
+.message-toast {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 1200;
+  display: flex;
+  align-items: stretch;
+  gap: 0.25rem;
+  max-width: min(360px, calc(100vw - 2rem));
+  background: #0f2740;
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(15, 39, 64, 0.28);
+  overflow: hidden;
+}
+
+.message-toast-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  padding: 0.85rem 1rem;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.message-toast-body strong {
+  font-size: 0.92rem;
+}
+
+.message-toast-body span {
+  font-size: 0.82rem;
+  color: rgba(248, 250, 252, 0.82);
+}
+
+.message-toast-dismiss {
+  background: transparent;
+  border: 0;
+  color: rgba(248, 250, 252, 0.7);
+  padding: 0.65rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.message-toast-dismiss:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .notification-dropdown {
