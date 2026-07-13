@@ -542,6 +542,13 @@ async function loadThreadReplies(options: { quiet?: boolean } = {}) {
   })
   threadLoading.value = false
 
+  if (
+    selectedConversationId.value !== conversationId ||
+    activeThreadRoot.value?.id !== root.id
+  ) {
+    return
+  }
+
   if (response.error || !response.data) {
     return
   }

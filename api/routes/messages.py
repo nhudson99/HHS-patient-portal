@@ -605,8 +605,17 @@ def list_messages(conversation_id):
 
         since = None
         if since_raw:
+            # Unencoded '+' in ISO offsets becomes a space in query strings.
+            normalized = str(since_raw).strip()
+            if normalized.endswith(('Z', 'z')):
+                normalized = f'{normalized[:-1]}+00:00'
+            normalized = re.sub(
+                r'(\d{2}:\d{2}:\d{2}(?:\.\d+)?) (\d{2}:\d{2})$',
+                r'\1+\2',
+                normalized,
+            )
             try:
-                since = datetime.fromisoformat(since_raw.replace('Z', '+00:00'))
+                since = datetime.fromisoformat(normalized)
             except (TypeError, ValueError, AttributeError):
                 return jsonify({'error': 'Invalid since timestamp'}), 400
 

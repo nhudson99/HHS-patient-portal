@@ -1,3 +1,5 @@
+from urllib.parse import quote
+
 from api.db.connection import execute_query
 from api.tests.conftest import login_as, requires_db
 
@@ -204,7 +206,7 @@ def test_list_messages_since_returns_only_newer_rows(client):
     first = first_response.get_json()['message']
 
     empty_delta = client.get(
-        f'/api/conversations/{conversation_id}/messages?since={first["created_at"]}',
+        f'/api/conversations/{conversation_id}/messages?since={quote(first["created_at"])}',
         headers=doctor_headers,
     )
     assert empty_delta.status_code == 200
@@ -218,6 +220,7 @@ def test_list_messages_since_returns_only_newer_rows(client):
     assert second_response.status_code == 201, second_response.get_json()
     second = second_response.get_json()['message']
 
+    # Also accept unencoded '+' offsets (decoded as space by query parsers).
     delta_response = client.get(
         f'/api/conversations/{conversation_id}/messages?since={first["created_at"]}',
         headers=doctor_headers,
@@ -274,7 +277,7 @@ def test_list_thread_messages_since_returns_only_newer_replies(client):
 
     delta_response = client.get(
         f'/api/conversations/{conversation_id}/messages'
-        f'?parent_message_id={parent["id"]}&since={first_reply["created_at"]}',
+        f'?parent_message_id={parent["id"]}&since={quote(first_reply["created_at"])}',
         headers=doctor_headers,
     )
     assert delta_response.status_code == 200
