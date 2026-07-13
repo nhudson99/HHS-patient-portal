@@ -80,8 +80,8 @@ const handleLogin = async () => {
       
       // Redirect based on user role
       if (response.data.user.role === 'doctor') {
-        console.log('Redirecting to doctor dashboard')
-        router.push('/doctor')
+        console.log('Redirecting to provider dashboard')
+        router.push('/provider')
       } else {
         console.log('Redirecting to patient dashboard')
         router.push('/patient')

@@ -74,7 +74,7 @@
           <span class="summary-value">{{ formatDateTime(appointmentInfo.appointment_date) }}</span>
         </div>
         <div v-if="appointmentInfo?.doctor_name" class="summary-row">
-          <span class="summary-label">Doctor</span>
+          <span class="summary-label">Provider</span>
           <span class="summary-value">Dr. {{ appointmentInfo.doctor_name }}</span>
         </div>
         <div v-if="appointmentInfo?.reason" class="summary-row">

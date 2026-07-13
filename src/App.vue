@@ -213,7 +213,7 @@ const pageTitle = computed(() => {
   if (adminSession.value) return 'HHS Admin'
   if (route.path.startsWith('/profile')) return 'My Profile'
   if (route.path.startsWith('/patients')) return 'Patients'
-  if (route.path.startsWith('/doctor')) return 'Doctor Dashboard'
+  if (route.path.startsWith('/provider') || route.path.startsWith('/doctor')) return 'Provider Dashboard'
   if (route.path.startsWith('/patient')) return 'Patient Dashboard'
   return 'Hudson Health System'
 })
@@ -223,7 +223,7 @@ const navButtons = computed<NavButton[]>(() => {
   if (!currentUser.value) return []
   if (currentUser.value.role === 'doctor') {
     return [
-      { label: 'Home', to: '/doctor' },
+      { label: 'Home', to: '/provider' },
       { label: 'Patients', to: '/patients' },
       { label: 'Profile', to: '/profile' }
     ]
@@ -414,7 +414,7 @@ function getFeatureRequestPage(): string {
   if (globalThis.window !== undefined) {
     return `${globalThis.window.location.pathname}${globalThis.window.location.search}${globalThis.window.location.hash}`
   }
-  return '/doctor'
+  return '/provider'
 }
 
 const featureRequestPage = ref(getFeatureRequestPage())
@@ -461,10 +461,10 @@ async function submitFeatureRequest() {
         'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
       },
       body: JSON.stringify({
-        title: 'Doctor Feature Request',
+        title: 'Provider Feature Request',
         description,
         page: featureRequestPage.value,
-        route_name: String(route.name || 'DoctorDashboard')
+        route_name: String(route.name || 'ProviderDashboard')
       })
     })
 

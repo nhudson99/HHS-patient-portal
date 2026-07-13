@@ -118,13 +118,13 @@ Use this flow for fast, reproducible debugging sessions:
 
 When touching auth/session code, always verify both login directions:
 
-- portal login (`/` -> `/doctor` or `/patient`)
+- portal login (`/` -> `/provider` or `/patient`)
 - admin SSO flow (`/admin`)
 
 When touching scheduling code, always verify:
 
 - day/week/month calendar placement consistency
-- appointment status propagation doctor -> patient
+- appointment status propagation provider -> patient
 - date string formats stay `YYYY-MM-DD` for calendar matching
 
 ## Change Management

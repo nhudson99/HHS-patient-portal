@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import DoctorDashboard from '@/views/DoctorDashboard.vue'
+import ProviderDashboard from '@/views/ProviderDashboard.vue'
 
 function getLocalDateString(date: Date): string {
   const year = date.getFullYear()
@@ -9,7 +9,7 @@ function getLocalDateString(date: Date): string {
   return `${year}-${month}-${day}`
 }
 
-describe('DoctorDashboard.vue', () => {
+describe('ProviderDashboard.vue', () => {
   beforeEach(() => {
     vi.stubGlobal(
       'fetch',
@@ -21,7 +21,7 @@ describe('DoctorDashboard.vue', () => {
   })
 
   it('renders day schedule controls', async () => {
-    const wrapper = mount(DoctorDashboard)
+    const wrapper = mount(ProviderDashboard)
     await flushPromises()
 
     expect(wrapper.text()).toContain('Provider Day Schedule')
@@ -87,7 +87,7 @@ describe('DoctorDashboard.vue', () => {
       }))
     )
 
-    const wrapper = mount(DoctorDashboard)
+    const wrapper = mount(ProviderDashboard)
     await flushPromises()
 
     const providerColumns = wrapper.findAll('.provider-column')
@@ -120,7 +120,7 @@ describe('DoctorDashboard.vue', () => {
     }))
     vi.stubGlobal('fetch', fetchMock)
 
-    mount(DoctorDashboard)
+    mount(ProviderDashboard)
     await flushPromises()
 
     expect(fetchMock).toHaveBeenCalled()
@@ -129,7 +129,7 @@ describe('DoctorDashboard.vue', () => {
   })
 
   it('shows empty state when day has no events', async () => {
-    const wrapper = mount(DoctorDashboard)
+    const wrapper = mount(ProviderDashboard)
     await flushPromises()
 
     expect(wrapper.text()).toContain('No appointments or events scheduled for this day.')
