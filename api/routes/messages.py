@@ -347,6 +347,20 @@ def list_conversations():
                        LIMIT 1
                    ) AS last_message_body,
                    (
+                       SELECT m.id
+                       FROM messages m
+                       WHERE m.conversation_id = c.id AND m.deleted_at IS NULL
+                       ORDER BY m.created_at DESC
+                       LIMIT 1
+                   ) AS last_message_id,
+                   (
+                       SELECT m.parent_message_id
+                       FROM messages m
+                       WHERE m.conversation_id = c.id AND m.deleted_at IS NULL
+                       ORDER BY m.created_at DESC
+                       LIMIT 1
+                   ) AS last_message_parent_id,
+                   (
                        SELECT m.created_at
                        FROM messages m
                        WHERE m.conversation_id = c.id AND m.deleted_at IS NULL
@@ -396,9 +410,15 @@ def list_conversations():
                 'participants': participants,
                 'unread_count': unread,
                 'last_message': {
+                    'id': str(row['last_message_id']) if row.get('last_message_id') else None,
                     'body': row.get('last_message_body'),
                     'created_at': _iso(row.get('last_message_at')),
                     'sender_name': last_sender_name,
+                    'parent_message_id': (
+                        str(row['last_message_parent_id'])
+                        if row.get('last_message_parent_id')
+                        else None
+                    ),
                 } if row.get('last_message_body') else None,
             })
 

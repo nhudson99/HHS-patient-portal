@@ -84,9 +84,11 @@ export interface ConversationParticipant {
 }
 
 export interface ConversationLastMessage {
+  id?: string | null
   body: string
   created_at?: string | null
   sender_name?: string | null
+  parent_message_id?: string | null
 }
 
 export interface Conversation {

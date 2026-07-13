@@ -289,6 +289,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { formatDistanceToNow, parseISO, format } from 'date-fns'
 import { messagesApi } from '@/api'
 import type { ChatMessage, Conversation, MessagingContact } from '@/types'
@@ -296,6 +297,8 @@ import { getCurrentUser } from '@/store'
 
 const POLL_MS = 4000
 
+const route = useRoute()
+const router = useRouter()
 const currentUser = getCurrentUser()
 const currentUserId = String(currentUser?.id || '')
 const canCreateChannel = currentUser?.role === 'doctor'
@@ -521,6 +524,39 @@ async function openThread(message: ChatMessage) {
   await loadThreadReplies()
 }
 
+async function openThreadById(threadId: string) {
+  const root = messages.value.find((message) => message.id === threadId)
+  if (root) {
+    await openThread(root)
+  }
+}
+
+async function applyRouteTarget() {
+  const conversationId = typeof route.query.conversation === 'string'
+    ? route.query.conversation
+    : null
+  const threadId = typeof route.query.thread === 'string' ? route.query.thread : null
+  if (!conversationId) return
+
+  if (!conversations.value.some((conversation) => conversation.id === conversationId)) {
+    await loadConversations({ quiet: true })
+  }
+
+  selectedConversationId.value = conversationId
+  closeThread()
+  await loadMessages()
+  if (threadId) {
+    await openThreadById(threadId)
+  }
+
+  if (route.query.conversation || route.query.thread) {
+    const nextQuery = { ...route.query }
+    delete nextQuery.conversation
+    delete nextQuery.thread
+    await router.replace({ path: '/messages', query: nextQuery })
+  }
+}
+
 function closeThread() {
   activeThreadRoot.value = null
   threadReplies.value = []
@@ -712,15 +748,27 @@ function onVisibilityChange() {
   }
 }
 
-watch(selectedConversationId, async (id) => {
-  if (id) {
-    await loadMessages()
-  }
+watch(selectedConversationId, async (id, previousId) => {
+  if (!id || id === previousId) return
+  // Deep-link handler loads messages itself.
+  if (typeof route.query.conversation === 'string') return
+  await loadMessages()
 })
+
+watch(
+  () => [route.query.conversation, route.query.thread] as const,
+  async ([conversationId]) => {
+    if (typeof conversationId === 'string') {
+      await applyRouteTarget()
+    }
+  },
+)
 
 onMounted(async () => {
   await loadConversations()
-  if (selectedConversationId.value) {
+  if (typeof route.query.conversation === 'string') {
+    await applyRouteTarget()
+  } else if (selectedConversationId.value) {
     await loadMessages()
   }
   pollTimer = globalThis.setInterval(() => {

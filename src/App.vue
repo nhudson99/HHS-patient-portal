@@ -24,15 +24,6 @@
           </button>
           <span v-if="adminSession" class="admin-role-badge">ADMIN</span>
           <span class="user-name">{{ userName }}</span>
-          <RouterLink
-            v-if="isPortalMessagingUser"
-            to="/messages"
-            class="messages-header-link"
-            aria-label="Open messages"
-          >
-            Messages
-            <span v-if="unreadMessageCount > 0" class="notification-badge">{{ unreadMessageCount }}</span>
-          </RouterLink>
           <div
             v-if="isProviderUser"
             ref="providerNotificationRef"
@@ -42,37 +33,69 @@
               class="notification-btn"
               :aria-expanded="showProviderNotifications"
               aria-haspopup="menu"
-              aria-label="Provider alerts"
+              aria-label="Provider notifications"
               @click="toggleProviderNotifications"
             >
               <span class="notification-icon" aria-hidden="true">🔔</span>
               <span
-                v-if="unreadProviderAlertCount > 0"
+                v-if="notificationBadgeCount > 0"
                 class="notification-badge"
               >
-                {{ unreadProviderAlertCount }}
+                {{ notificationBadgeCount }}
               </span>
             </button>
             <div v-if="showProviderNotifications" class="notification-dropdown">
-              <div class="notification-dropdown-header">Alerts</div>
+              <div class="notification-dropdown-header">Notifications</div>
               <div v-if="providerAlertLoadError" class="notification-status error">
                 {{ providerAlertLoadError }}
               </div>
-              <div v-else-if="providerAlerts.length === 0" class="notification-status">
-                No alerts right now.
+              <div
+                v-else-if="messageNotifications.length === 0 && providerAlerts.length === 0"
+                class="notification-status"
+              >
+                No notifications right now.
               </div>
-              <ul v-else class="notification-list">
-                <li
-                  v-for="alert in providerAlerts"
-                  :key="alert.id"
-                  class="notification-item"
-                >
-                  <div class="notification-title">{{ alert.title }}</div>
-                  <div class="notification-meta">
-                    {{ alert.patientName }} • {{ formatAlertDateTime(alert.eventDate, alert.startTime) }}
-                  </div>
-                </li>
-              </ul>
+              <template v-else>
+                <div v-if="messageNotifications.length > 0" class="notification-section-label">
+                  Messages
+                </div>
+                <ul v-if="messageNotifications.length > 0" class="notification-list">
+                  <li
+                    v-for="item in messageNotifications"
+                    :key="item.id"
+                    class="notification-item notification-item--action"
+                  >
+                    <button
+                      type="button"
+                      class="notification-item-btn"
+                      @click="openMessageNotification(item)"
+                    >
+                      <div class="notification-title">{{ item.title }}</div>
+                      <div class="notification-meta">
+                        {{ item.preview }}
+                      </div>
+                      <div v-if="item.unreadCount > 1" class="notification-count">
+                        {{ item.unreadCount }} unread
+                      </div>
+                    </button>
+                  </li>
+                </ul>
+                <div v-if="providerAlerts.length > 0" class="notification-section-label">
+                  Schedule
+                </div>
+                <ul v-if="providerAlerts.length > 0" class="notification-list">
+                  <li
+                    v-for="alert in providerAlerts"
+                    :key="alert.id"
+                    class="notification-item"
+                  >
+                    <div class="notification-title">{{ alert.title }}</div>
+                    <div class="notification-meta">
+                      {{ alert.patientName }} • {{ formatAlertDateTime(alert.eventDate, alert.startTime) }}
+                    </div>
+                  </li>
+                </ul>
+              </template>
             </div>
           </div>
           <button @click="handleLogout" class="logout-btn">Logout</button>
@@ -191,6 +214,16 @@ type ProviderAlert = {
   startTime: string
 }
 
+type MessageNotification = {
+  id: string
+  conversationId: string
+  title: string
+  preview: string
+  unreadCount: number
+  threadId?: string | null
+  createdAt?: string | null
+}
+
 type ProviderAlertEventRow = {
   id?: string
   event_type?: string
@@ -223,8 +256,10 @@ const PROVIDER_ALERT_REFRESH_MS = 60000
 const MESSAGE_UNREAD_REFRESH_MS = 5000
 const MESSAGE_TOAST_MS = 6000
 const unreadMessageCount = ref(0)
+const messageNotifications = ref<MessageNotification[]>([])
 const messageToastVisible = ref(false)
 const messageToastText = ref('')
+const toastTarget = ref<MessageNotification | null>(null)
 let messageUnreadIntervalId: ReturnType<typeof globalThis.setInterval> | null = null
 let messageToastTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null
 let previousUnreadCount: number | null = null
@@ -302,6 +337,10 @@ const isProviderUser = computed(() => {
 
 const unreadProviderAlertCount = computed(() => {
   return providerAlerts.value.filter((alert) => !readProviderAlertIds.value.has(alert.id)).length
+})
+
+const notificationBadgeCount = computed(() => {
+  return unreadMessageCount.value + unreadProviderAlertCount.value
 })
 
 function getProviderAlertStorageKey(): string {
@@ -397,14 +436,16 @@ function startMessageUnreadPolling() {
 function dismissMessageToast() {
   messageToastVisible.value = false
   messageToastText.value = ''
+  toastTarget.value = null
   if (messageToastTimeoutId !== null) {
     globalThis.clearTimeout(messageToastTimeoutId)
     messageToastTimeoutId = null
   }
 }
 
-function showMessageToast(text: string) {
+function showMessageToast(text: string, target: MessageNotification | null = null) {
   messageToastText.value = text
+  toastTarget.value = target
   messageToastVisible.value = true
   if (messageToastTimeoutId !== null) {
     globalThis.clearTimeout(messageToastTimeoutId)
@@ -414,14 +455,66 @@ function showMessageToast(text: string) {
   }, MESSAGE_TOAST_MS)
 }
 
-function openMessagesFromToast() {
+function messagesRouteFor(target: MessageNotification) {
+  const query: Record<string, string> = { conversation: target.conversationId }
+  if (target.threadId) {
+    query.thread = target.threadId
+  }
+  return { path: '/messages', query }
+}
+
+function openMessageNotification(item: MessageNotification) {
+  closeProviderNotifications()
   dismissMessageToast()
+  router.push(messagesRouteFor(item))
+}
+
+function openMessagesFromToast() {
+  const target = toastTarget.value
+  dismissMessageToast()
+  if (target) {
+    router.push(messagesRouteFor(target))
+    return
+  }
+  if (messageNotifications.value.length > 0) {
+    router.push(messagesRouteFor(messageNotifications.value[0]))
+    return
+  }
   router.push('/messages')
+}
+
+function truncatePreview(body: string, max = 80): string {
+  const cleaned = (body || '').replace(/\s+/g, ' ').trim()
+  if (cleaned.length <= max) return cleaned
+  return `${cleaned.slice(0, max - 1)}…`
+}
+
+function toMessageNotifications(
+  conversations: import('@/types').Conversation[],
+): MessageNotification[] {
+  return conversations
+    .filter((conversation) => conversation.unread_count > 0)
+    .map((conversation) => {
+      const last = conversation.last_message
+      const sender = last?.sender_name ? `${last.sender_name}: ` : ''
+      const body = last?.body ? truncatePreview(last.body) : 'New message'
+      return {
+        id: conversation.id,
+        conversationId: conversation.id,
+        title: conversation.title,
+        preview: `${sender}${body}`,
+        unreadCount: conversation.unread_count,
+        threadId: last?.parent_message_id || null,
+        createdAt: last?.created_at || conversation.updated_at || null,
+      }
+    })
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
 }
 
 async function loadUnreadMessageCount() {
   if (!isPortalMessagingUser.value) {
     unreadMessageCount.value = 0
+    messageNotifications.value = []
     previousUnreadCount = 0
     dismissMessageToast()
     return
@@ -431,29 +524,45 @@ async function loadUnreadMessageCount() {
     return
   }
 
+  if (isProviderUser.value) {
+    const response = await messagesApi.listConversations()
+    if (response.error || !response.data) {
+      return
+    }
+
+    const notifications = toMessageNotifications(response.data.conversations)
+    const nextCount = notifications.reduce((sum, item) => sum + item.unreadCount, 0)
+    const previous = previousUnreadCount
+    messageNotifications.value = notifications
+    unreadMessageCount.value = nextCount
+    previousUnreadCount = nextCount
+
+    if (
+      previous !== null
+      && nextCount > previous
+      && route.path !== '/messages'
+    ) {
+      const added = nextCount - previous
+      const latest = notifications[0] || null
+      showMessageToast(
+        added === 1
+          ? 'You have a new unread message.'
+          : `You have ${added} new unread messages.`,
+        latest,
+      )
+    }
+    return
+  }
+
   const response = await messagesApi.getUnreadCount()
   if (response.error || !response.data) {
     return
   }
 
   const nextCount = response.data.unread_count || 0
-  const previous = previousUnreadCount
   unreadMessageCount.value = nextCount
   previousUnreadCount = nextCount
-
-  if (
-    previous !== null
-    && nextCount > previous
-    && isProviderUser.value
-    && route.path !== '/messages'
-  ) {
-    const added = nextCount - previous
-    showMessageToast(
-      added === 1
-        ? 'You have a new unread message.'
-        : `You have ${added} new unread messages.`,
-    )
-  }
+  messageNotifications.value = []
 }
 
 function onMessageUnreadVisibilityChange() {
@@ -687,6 +796,7 @@ watch(
     stopProviderAlertPolling()
     providerAlerts.value = []
     providerAlertLoadError.value = ''
+    messageNotifications.value = []
     dismissMessageToast()
   },
   { immediate: false }
@@ -702,6 +812,7 @@ watch(
     }
     stopMessageUnreadPolling()
     unreadMessageCount.value = 0
+    messageNotifications.value = []
     previousUnreadCount = null
     dismissMessageToast()
   },
@@ -878,27 +989,6 @@ body {
   }
 }
 
-.messages-header-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  color: rgba(255, 255, 255, 0.92);
-  text-decoration: none;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  border-radius: 6px;
-  padding: 0.4rem 0.75rem;
-  font-size: 0.85rem;
-  position: relative;
-}
-
-.messages-header-link:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.messages-header-link .notification-badge {
-  position: static;
-}
-
 .logout-btn {
   padding: 0.45rem 1rem;
   background: transparent;
@@ -1052,9 +1142,35 @@ body {
   padding: 0;
 }
 
+.notification-section-label {
+  padding: 0.55rem 0.9rem 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+
 .notification-item {
   padding: 0.75rem 0.9rem;
   border-top: 1px solid #f3f4f6;
+}
+
+.notification-item--action {
+  padding: 0;
+}
+
+.notification-item-btn {
+  width: 100%;
+  padding: 0.75rem 0.9rem;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.notification-item-btn:hover {
+  background: #f3f6fb;
 }
 
 .notification-title {
@@ -1067,6 +1183,13 @@ body {
   margin-top: 0.25rem;
   color: #4b5563;
   font-size: 0.8rem;
+}
+
+.notification-count {
+  margin-top: 0.3rem;
+  color: #1d4ed8;
+  font-size: 0.72rem;
+  font-weight: 600;
 }
 
 .admin-role-badge {
