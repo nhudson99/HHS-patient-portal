@@ -113,7 +113,7 @@ This repo now includes `.github/workflows/deploy-main.yml`, which runs `azure-de
 - `SESSION_SECRET`, `JWT_SECRET`
 - `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`
 - `REDIS_URL` (optional, if used)
-- `DEPLOY_GITHUB_TOKEN` (optional, if doctor feature requests should post to GitHub)
+- `DEPLOY_GITHUB_TOKEN` (optional, if provider feature requests should post to GitHub)
 - `DOCUMENTS_BLOB_ENDPOINT` (if using endpoint+credential mode)
 - `DOCUMENTS_BLOB_CREDENTIAL` (if using endpoint+credential mode)
 - `DOCUMENTS_BLOB_CONNECTION_STRING` (optional alternative to endpoint+credential)

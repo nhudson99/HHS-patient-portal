@@ -1,6 +1,6 @@
 """
 Patients routes for HHS Patient Portal
-Provides patient record access for doctors; allows doctors to create patients
+Provides patient record access for providers; allows providers to create patients
 """
 
 from flask import Blueprint, request, jsonify, current_app
@@ -67,8 +67,8 @@ def list_doctors():
         return jsonify({'doctors': [serialize_doctor(d) for d in doctors]}), 200
 
     except Exception:
-        current_app.logger.exception('Doctors retrieval error')
-        return jsonify({'error': 'Failed to retrieve doctors'}), 500
+        current_app.logger.exception('Providers retrieval error')
+        return jsonify({'error': 'Failed to retrieve providers'}), 500
 
 
 @patients_bp.route('/me', methods=['GET'])
@@ -131,7 +131,7 @@ def list_patients():
 def create_patient():
     """
     POST /api/patients
-    Doctor creates a new patient account with a temporary password.
+    Provider creates a new patient account with a temporary password.
     """
     try:
         user = request.user
@@ -191,7 +191,7 @@ def create_patient():
         result['is_active'] = True
 
         current_app.logger.info(
-            'Doctor %s created patient %s (%s)',
+            'Provider %s created patient %s (%s)',
             user.get('username'),
             username,
             patient['id'],
@@ -203,5 +203,5 @@ def create_patient():
         }), 201
 
     except Exception:
-        current_app.logger.exception('Doctor create patient error')
+        current_app.logger.exception('Provider create patient error')
         return jsonify({'error': 'Failed to create patient'}), 500

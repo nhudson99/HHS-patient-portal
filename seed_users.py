@@ -102,14 +102,14 @@ def create_test_users():
             
             print(f"✅ Created doctor: {doctor_username} / {doctor_password}")
         else:
-            print(f"ℹ️  Doctor user already exists: {doctor_username}")
+            print(f"ℹ️  Provider user already exists: {doctor_username}")
         
         print("\n" + "="*60)
         print("✅ Database seeding complete!")
         print("="*60)
         print("\nTest Credentials:")
         print(f"  Patient: {patient_username} / {patient_password}")
-        print(f"  Doctor:  {doctor_username} / {doctor_password}")
+        print(f"  Provider:  {doctor_username} / {doctor_password}")
         print("="*60 + "\n")
         
     except Exception as e:

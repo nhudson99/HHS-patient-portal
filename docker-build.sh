@@ -129,6 +129,6 @@ if [[ "${1:-}" == "start" ]] || [[ "${1:-}" == "build" ]] || [[ "${1:-}" == "" ]
     echo -e "${GREEN}║  Redis:      localhost:6379              ║${NC}"
     echo -e "${GREEN}║                                            ║${NC}"
     echo -e "${GREEN}║  Patient:    patient1 / Patient123!       ║${NC}"
-    echo -e "${GREEN}║  Doctor:     doctor1 / Doctor123!         ║${NC}"
+    echo -e "${GREEN}║  Provider:     doctor1 / Doctor123!         ║${NC}"
     echo -e "${GREEN}╚════════════════════════════════════════════╝${NC}"
 fi

@@ -1,6 +1,6 @@
 """
 Feature request routes
-Allows doctors to submit product feedback directly to GitHub as issues.
+Allows providers to submit product feedback directly to GitHub as issues.
 """
 
 from flask import Blueprint, request, jsonify
@@ -67,7 +67,7 @@ def _build_issue_body(description: str, user: dict, page: str, route_name: str) 
 ### Submitted From
 | Field | Value |
 |---|---|
-| Doctor | `{user.get('username')}` (ID: `{user.get('id')}`) |
+| Provider | `{user.get('username')}` (ID: `{user.get('id')}`) |
 | Page | `{page}` |
 | Route | `{route_name or 'unknown'}` |
 | Submitted (UTC) | `{datetime.now(timezone.utc).isoformat()}` |
@@ -107,7 +107,7 @@ def _create_issue_with_label_fallback(github_repo: str, github_token: str, paylo
 def create_feature_request():
     """
     POST /api/feature-requests
-    Create a GitHub issue from doctor-side feedback.
+    Create a GitHub issue from provider-side feedback.
 
     Required JSON body:
       - description: str
@@ -119,7 +119,7 @@ def create_feature_request():
     try:
         user = request.user
         if user.get('role') != 'doctor':
-            return jsonify({'error': 'Only doctors can submit feature requests'}), 403
+            return jsonify({'error': 'Only providers can submit feature requests'}), 403
 
         data = request.get_json(silent=True) or {}
         description, page, route_name, custom_title = _extract_feature_request_fields(data)
