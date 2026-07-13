@@ -73,3 +73,51 @@ export interface MedicalDocument {
   date: string
   content: string
 }
+
+export interface ConversationParticipant {
+  user_id: string
+  display_name: string
+  role: 'doctor' | 'patient' | string | null
+  specialty?: string | null
+  last_read_at?: string | null
+  joined_at?: string | null
+}
+
+export interface ConversationLastMessage {
+  body: string
+  created_at?: string | null
+  sender_name?: string | null
+}
+
+export interface Conversation {
+  id: string
+  type: 'dm' | 'channel'
+  title: string
+  created_by_user_id?: string | null
+  created_at?: string
+  updated_at?: string
+  participants: ConversationParticipant[]
+  unread_count: number
+  last_message?: ConversationLastMessage | null
+}
+
+export interface ChatMessage {
+  id: string
+  conversation_id: string
+  sender_user_id: string
+  sender_name: string
+  sender_role?: string | null
+  parent_message_id?: string | null
+  body: string
+  created_at: string
+  edited_at?: string | null
+  deleted_at?: string | null
+  reply_count: number
+}
+
+export interface MessagingContact {
+  user_id: string
+  display_name: string
+  role: 'doctor' | 'patient' | string
+  specialty?: string | null
+}

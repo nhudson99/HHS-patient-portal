@@ -155,3 +155,46 @@ CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at ON user_sessions(expires
 
 ALTER TABLE patient_properties ADD COLUMN IF NOT EXISTS created_by_doctor_id UUID REFERENCES doctors(id) ON DELETE SET NULL;
 ALTER TABLE patient_properties ADD COLUMN IF NOT EXISTS updated_by_doctor_id UUID REFERENCES doctors(id) ON DELETE SET NULL;
+
+-- In-app messaging (Slack-like DMs, channels, and threads)
+CREATE TABLE IF NOT EXISTS conversations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    type TEXT NOT NULL CHECK (type IN ('dm', 'channel')),
+    title TEXT,
+    created_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT conversations_channel_title_check
+        CHECK (type = 'dm' OR (title IS NOT NULL AND length(trim(title)) > 0))
+);
+
+CREATE TABLE IF NOT EXISTS conversation_participants (
+    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    last_read_at TIMESTAMPTZ,
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (conversation_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    sender_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    parent_message_id UUID REFERENCES messages(id) ON DELETE CASCADE,
+    body TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    edited_at TIMESTAMPTZ,
+    deleted_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversations_type ON conversations(type);
+CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_conversation_participants_user
+    ON conversation_participants(user_id, conversation_id);
+CREATE INDEX IF NOT EXISTS idx_messages_conversation_created
+    ON messages(conversation_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_parent
+    ON messages(parent_message_id)
+    WHERE parent_message_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_messages_sender
+    ON messages(sender_user_id, created_at DESC);
