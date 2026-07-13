@@ -56,7 +56,8 @@ Apply these rules by default unless a direct user request overrides them.
 
 - Assume cloud deployment target is Azure Container Apps.
 - Keep configs env-driven (`.env` / secret refs), not hardcoded.
-- Preserve compatibility with existing deploy scripts (`azure-deploy.sh`, Dockerfile, startup scripts).
+- Preserve compatibility with existing deploy scripts (`azure-deploy.sh`, `Dockerfile`, `dev.sh`).
+- Prefer Docker Compose for local runs (`./dev.sh up`); keep API live-reload and Compose Vue builds working.
 - Ensure production-safe defaults:
   - no localhost DB for cloud deploys,
   - explicit CORS origins,

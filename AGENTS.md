@@ -13,7 +13,7 @@ This repo is the **HHS Patient Portal**. The dev environment runs on **Docker Co
 | `redis` | hhs-redis | 6379 | Cache/session store. |
 | `db-init` | hhs-db-init | – | One-shot; applies `server/db/schema.sql` + `seed.sql` (idempotent), then exits. |
 
-Standard commands live in `DOCKER.md`, `DOCKER-QUICKSTART.md`, the `dev.sh` helper, and `package.json`. Non-obvious caveats:
+Standard commands live in `README.md`, the `dev.sh` helper, and `package.json`. Non-obvious caveats:
 
 - **Docker daemon is NOT running on VM boot.** Start it once per session, e.g. `sudo dockerd &` (log to a file if you want to watch it). Run all docker commands with `sudo`. The daemon config in `/etc/docker/daemon.json` (`fuse-overlayfs` storage driver + `containerd-snapshotter` disabled) is required for Docker-in-Docker here and is already in place — do not switch to `overlay2`.
 - **Bring up the stack:** `./dev.sh up` (preferred) or `sudo docker compose up -d --force-recreate frontend` then `sudo docker compose up -d`. Compose builds the Vue app into `./dist` via the `frontend` service before nginx starts. A completed frontend container is **not** re-run on a plain `docker compose up`, so use `--force-recreate frontend` (or `./dev.sh up` / `./dev.sh frontend`) after Vue/TS changes.
