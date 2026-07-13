@@ -1,17 +1,17 @@
 <template>
   <div id="app" :class="{ 'has-sidebar': showHeader && navButtons.length > 0 }">
     <header v-if="showHeader" class="top-header">
+      <button
+        v-if="navButtons.length > 0"
+        class="hamburger-btn"
+        :aria-label="showSidebar ? 'Close navigation menu' : 'Open navigation menu'"
+        :aria-expanded="showSidebar"
+        @click="toggleSidebar"
+      >
+        ☰
+      </button>
       <div class="header-content">
         <div class="header-left">
-          <button
-            v-if="navButtons.length > 0"
-            class="hamburger-btn"
-            :aria-label="showSidebar ? 'Close navigation menu' : 'Open navigation menu'"
-            :aria-expanded="showSidebar"
-            @click="toggleSidebar"
-          >
-            ☰
-          </button>
           <h1>🏥 {{ pageTitle }}</h1>
         </div>
         <div class="user-actions">
@@ -650,12 +650,15 @@ body {
   position: sticky;
   top: 0;
   z-index: 1000;
+  display: flex;
+  align-items: center;
   background: #1a3a5c;
   color: white;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .header-content {
+  flex: 1;
   max-width: 1400px;
   margin: 0 auto;
   padding: 0.75rem 2rem;
@@ -676,10 +679,12 @@ body {
 }
 
 .hamburger-btn {
-  width: 2.2rem;
-  height: 2.2rem;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  border-radius: 6px;
+  flex-shrink: 0;
+  align-self: stretch;
+  width: 2.75rem;
+  border: none;
+  border-right: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0;
   background: transparent;
   color: #fff;
   font-size: 1.1rem;
