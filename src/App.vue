@@ -1,12 +1,13 @@
 <template>
-  <div id="app">
+  <div id="app" :class="{ 'has-sidebar': showHeader && navButtons.length > 0 }">
     <header v-if="showHeader" class="top-header">
       <div class="header-content">
         <div class="header-left">
           <button
             v-if="navButtons.length > 0"
             class="hamburger-btn"
-            aria-label="Open navigation menu"
+            :aria-label="showSidebar ? 'Close navigation menu' : 'Open navigation menu'"
+            :aria-expanded="showSidebar"
             @click="toggleSidebar"
           >
             ☰
@@ -84,8 +85,9 @@
       @click="closeSidebar"
     ></div>
     <aside
-      v-if="showHeader && showSidebar && navButtons.length > 0"
+      v-if="showHeader && navButtons.length > 0"
       class="app-sidebar"
+      :class="{ 'app-sidebar--open': showSidebar }"
       aria-label="Application navigation"
     >
       <nav class="sidebar-nav">
@@ -94,7 +96,7 @@
           :key="button.to"
           :to="button.to"
           class="sidebar-link"
-          @click="closeSidebar"
+          @click="closeSidebarOnMobile"
         >
           <span>{{ button.label }}</span>
           <span
@@ -233,7 +235,7 @@ const pageTitle = computed(() => {
   if (route.path.startsWith('/profile')) return 'My Profile'
   if (route.path.startsWith('/patients')) return 'Patients'
   if (route.path.startsWith('/messages')) return 'Messages'
-  if (route.path.startsWith('/provider') || route.path.startsWith('/doctor')) return 'Provider Dashboard'
+  if (route.path.startsWith('/provider') || route.path.startsWith('/doctor')) return 'Dashboard'
   if (route.path.startsWith('/patient')) return 'Patient Dashboard'
   return 'Hudson Health System'
 })
@@ -243,7 +245,7 @@ const navButtons = computed<NavButton[]>(() => {
   if (!currentUser.value) return []
   if (currentUser.value.role === 'doctor') {
     return [
-      { label: 'Home', to: '/provider' },
+      { label: 'Dashboard', to: '/provider' },
       { label: 'Patients', to: '/patients' },
       { label: 'Messages', to: '/messages' },
       { label: 'Profile', to: '/profile' }
@@ -251,7 +253,7 @@ const navButtons = computed<NavButton[]>(() => {
   }
   if (currentUser.value.role === 'patient') {
     return [
-      { label: 'Home', to: '/patient' },
+      { label: 'Dashboard', to: '/patient' },
       { label: 'Messages', to: '/messages' },
       { label: 'Check In', to: '/checkin' },
       { label: 'Profile', to: '/profile' }
@@ -496,6 +498,12 @@ function closeSidebar() {
   showSidebar.value = false
 }
 
+function closeSidebarOnMobile() {
+  if (globalThis.window !== undefined && globalThis.window.matchMedia('(max-width: 900px)').matches) {
+    showSidebar.value = false
+  }
+}
+
 async function submitFeatureRequest() {
   featureRequestError.value = ''
   featureRequestSuccess.value = false
@@ -698,12 +706,18 @@ body {
   top: 0;
   left: 0;
   z-index: 2200;
-  width: 280px;
+  width: 240px;
   max-width: 80vw;
   height: 100vh;
   background: #0f2740;
   border-right: 1px solid rgba(255, 255, 255, 0.1);
   padding: 4.5rem 1rem 1rem;
+  transform: translateX(-100%);
+  transition: transform 0.2s ease;
+}
+
+.app-sidebar--open {
+  transform: translateX(0);
 }
 
 .sidebar-overlay {
@@ -750,6 +764,25 @@ body {
   font-size: 0.7rem;
   text-align: center;
   font-weight: 700;
+}
+
+/* Persistent sidebar on desktop so Messages (and other nav) stay visible */
+@media (min-width: 901px) {
+  .hamburger-btn {
+    display: none;
+  }
+
+  .sidebar-overlay {
+    display: none;
+  }
+
+  .app-sidebar {
+    transform: translateX(0);
+  }
+
+  #app.has-sidebar {
+    padding-left: 240px;
+  }
 }
 
 .messages-header-link {
