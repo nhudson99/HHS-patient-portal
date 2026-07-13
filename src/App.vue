@@ -1,10 +1,11 @@
 <template>
-  <div id="app">
+  <div id="app" :class="{ 'has-sidebar': showHeader && navButtons.length > 0 }">
     <header v-if="showHeader" class="top-header">
       <button
         v-if="navButtons.length > 0"
         class="hamburger-btn"
-        aria-label="Open navigation menu"
+        :aria-label="showSidebar ? 'Close navigation menu' : 'Open navigation menu'"
+        :aria-expanded="showSidebar"
         @click="toggleSidebar"
       >
         ☰
@@ -23,6 +24,15 @@
           </button>
           <span v-if="adminSession" class="admin-role-badge">ADMIN</span>
           <span class="user-name">{{ userName }}</span>
+          <RouterLink
+            v-if="isPortalMessagingUser"
+            to="/messages"
+            class="messages-header-link"
+            aria-label="Open messages"
+          >
+            Messages
+            <span v-if="unreadMessageCount > 0" class="notification-badge">{{ unreadMessageCount }}</span>
+          </RouterLink>
           <div
             v-if="isProviderUser"
             ref="providerNotificationRef"
@@ -75,8 +85,9 @@
       @click="closeSidebar"
     ></div>
     <aside
-      v-if="showHeader && showSidebar && navButtons.length > 0"
+      v-if="showHeader && navButtons.length > 0"
       class="app-sidebar"
+      :class="{ 'app-sidebar--open': showSidebar }"
       aria-label="Application navigation"
     >
       <nav class="sidebar-nav">
@@ -85,9 +96,15 @@
           :key="button.to"
           :to="button.to"
           class="sidebar-link"
-          @click="closeSidebar"
+          @click="closeSidebarOnMobile"
         >
-          {{ button.label }}
+          <span>{{ button.label }}</span>
+          <span
+            v-if="button.to === '/messages' && unreadMessageCount > 0"
+            class="nav-unread-badge"
+          >
+            {{ unreadMessageCount }}
+          </span>
         </RouterLink>
       </nav>
     </aside>
@@ -140,6 +157,7 @@
 import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { RouterView, RouterLink, useRoute, useRouter } from 'vue-router'
 import { logout, adminSession, clearAdminSession } from '@/store'
+import { messagesApi } from '@/api'
 
 type NavButton = {
   label: string
@@ -183,6 +201,9 @@ let providerAlertIntervalId: ReturnType<typeof globalThis.setInterval> | null = 
 
 const PROVIDER_ALERT_LOOKAHEAD_DAYS = 14
 const PROVIDER_ALERT_REFRESH_MS = 60000
+const MESSAGE_UNREAD_REFRESH_MS = 30000
+const unreadMessageCount = ref(0)
+let messageUnreadIntervalId: ReturnType<typeof globalThis.setInterval> | null = null
 
 const loadUser = () => {
   const userStr = localStorage.getItem('currentUser')
@@ -213,7 +234,8 @@ const pageTitle = computed(() => {
   if (adminSession.value) return 'HHS Admin'
   if (route.path.startsWith('/profile')) return 'My Profile'
   if (route.path.startsWith('/patients')) return 'Patients'
-  if (route.path.startsWith('/doctor')) return 'Doctor Dashboard'
+  if (route.path.startsWith('/messages')) return 'Messages'
+  if (route.path.startsWith('/provider') || route.path.startsWith('/doctor')) return 'Dashboard'
   if (route.path.startsWith('/patient')) return 'Patient Dashboard'
   return 'Hudson Health System'
 })
@@ -223,19 +245,27 @@ const navButtons = computed<NavButton[]>(() => {
   if (!currentUser.value) return []
   if (currentUser.value.role === 'doctor') {
     return [
-      { label: 'Home', to: '/doctor' },
+      { label: 'Dashboard', to: '/provider' },
       { label: 'Patients', to: '/patients' },
+      { label: 'Messages', to: '/messages' },
       { label: 'Profile', to: '/profile' }
     ]
   }
   if (currentUser.value.role === 'patient') {
     return [
-      { label: 'Home', to: '/patient' },
+      { label: 'Dashboard', to: '/patient' },
+      { label: 'Messages', to: '/messages' },
       { label: 'Check In', to: '/checkin' },
       { label: 'Profile', to: '/profile' }
     ]
   }
   return []
+})
+
+const isPortalMessagingUser = computed(() => {
+  return !!currentUser.value
+    && !adminSession.value
+    && (currentUser.value.role === 'doctor' || currentUser.value.role === 'patient')
 })
 
 const showFeatureRequestButton = computed(() => {
@@ -326,6 +356,33 @@ function startProviderAlertPolling() {
   }, PROVIDER_ALERT_REFRESH_MS)
 }
 
+function stopMessageUnreadPolling() {
+  if (messageUnreadIntervalId !== null) {
+    globalThis.clearInterval(messageUnreadIntervalId)
+    messageUnreadIntervalId = null
+  }
+}
+
+function startMessageUnreadPolling() {
+  stopMessageUnreadPolling()
+  messageUnreadIntervalId = globalThis.setInterval(() => {
+    loadUnreadMessageCount()
+  }, MESSAGE_UNREAD_REFRESH_MS)
+}
+
+async function loadUnreadMessageCount() {
+  if (!isPortalMessagingUser.value) {
+    unreadMessageCount.value = 0
+    return
+  }
+
+  const response = await messagesApi.getUnreadCount()
+  if (response.error || !response.data) {
+    return
+  }
+  unreadMessageCount.value = response.data.unread_count || 0
+}
+
 function markProviderAlertsAsRead() {
   if (providerAlerts.value.length === 0) {
     return
@@ -376,7 +433,7 @@ async function loadProviderAlerts() {
       `/api/events?start_date=${formatDateForApi(startDate)}&end_date=${formatDateForApi(endDate)}`,
       {
         headers: {
-          Authorization: `******'sessionToken')}`,
+          Authorization: `Bearer ${localStorage.getItem('sessionToken')}`,
         },
       }
     )
@@ -414,7 +471,7 @@ function getFeatureRequestPage(): string {
   if (globalThis.window !== undefined) {
     return `${globalThis.window.location.pathname}${globalThis.window.location.search}${globalThis.window.location.hash}`
   }
-  return '/doctor'
+  return '/provider'
 }
 
 const featureRequestPage = ref(getFeatureRequestPage())
@@ -441,6 +498,12 @@ function closeSidebar() {
   showSidebar.value = false
 }
 
+function closeSidebarOnMobile() {
+  if (globalThis.window !== undefined && globalThis.window.matchMedia('(max-width: 900px)').matches) {
+    showSidebar.value = false
+  }
+}
+
 async function submitFeatureRequest() {
   featureRequestError.value = ''
   featureRequestSuccess.value = false
@@ -461,10 +524,10 @@ async function submitFeatureRequest() {
         'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
       },
       body: JSON.stringify({
-        title: 'Doctor Feature Request',
+        title: 'Provider Feature Request',
         description,
         page: featureRequestPage.value,
-        route_name: String(route.name || 'DoctorDashboard')
+        route_name: String(route.name || 'ProviderDashboard')
       })
     })
 
@@ -505,6 +568,10 @@ onMounted(() => {
     loadProviderAlerts()
     startProviderAlertPolling()
   }
+  if (isPortalMessagingUser.value) {
+    loadUnreadMessageCount()
+    startMessageUnreadPolling()
+  }
   globalThis.document.addEventListener('click', handleClickOutsideNotifications)
 })
 
@@ -517,6 +584,9 @@ watch(
     loadReadProviderAlertIds()
     if (isProviderUser.value) {
       loadProviderAlerts()
+    }
+    if (isPortalMessagingUser.value) {
+      loadUnreadMessageCount()
     }
   }
 )
@@ -538,8 +608,23 @@ watch(
   { immediate: false }
 )
 
+watch(
+  isPortalMessagingUser,
+  (canMessage) => {
+    if (canMessage) {
+      loadUnreadMessageCount()
+      startMessageUnreadPolling()
+      return
+    }
+    stopMessageUnreadPolling()
+    unreadMessageCount.value = 0
+  },
+  { immediate: false }
+)
+
 onBeforeUnmount(() => {
   stopProviderAlertPolling()
+  stopMessageUnreadPolling()
   globalThis.document.removeEventListener('click', handleClickOutsideNotifications)
 })
 </script>
@@ -626,12 +711,18 @@ body {
   top: 0;
   left: 0;
   z-index: 2200;
-  width: 280px;
+  width: 240px;
   max-width: 80vw;
   height: 100vh;
   background: #0f2740;
   border-right: 1px solid rgba(255, 255, 255, 0.1);
   padding: 4.5rem 1rem 1rem;
+  transform: translateX(-100%);
+  transition: transform 0.2s ease;
+}
+
+.app-sidebar--open {
+  transform: translateX(0);
 }
 
 .sidebar-overlay {
@@ -648,7 +739,10 @@ body {
 }
 
 .sidebar-link {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
   padding: 0.7rem 0.85rem;
   color: rgba(255, 255, 255, 0.9);
   text-decoration: none;
@@ -664,6 +758,57 @@ body {
   background: rgba(255, 255, 255, 0.2);
   border-color: rgba(255, 255, 255, 0.35);
   font-weight: 600;
+}
+
+.nav-unread-badge {
+  background: #dc2626;
+  color: white;
+  border-radius: 999px;
+  min-width: 1.25rem;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.7rem;
+  text-align: center;
+  font-weight: 700;
+}
+
+/* Persistent sidebar on desktop so Messages (and other nav) stay visible */
+@media (min-width: 901px) {
+  .hamburger-btn {
+    display: none;
+  }
+
+  .sidebar-overlay {
+    display: none;
+  }
+
+  .app-sidebar {
+    transform: translateX(0);
+  }
+
+  #app.has-sidebar {
+    padding-left: 240px;
+  }
+}
+
+.messages-header-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: rgba(255, 255, 255, 0.92);
+  text-decoration: none;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 6px;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  position: relative;
+}
+
+.messages-header-link:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.messages-header-link .notification-badge {
+  position: static;
 }
 
 .logout-btn {

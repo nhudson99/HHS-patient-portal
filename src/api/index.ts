@@ -224,8 +224,104 @@ export const patientPropertiesApi = {
   },
 };
 
+/**
+ * In-app messaging API (DMs, channels, threads)
+ */
+export const messagesApi = {
+  async listConversations() {
+    return request<{ conversations: import('@/types').Conversation[] }>(
+      '/api/conversations',
+      { method: 'GET' },
+    );
+  },
+
+  async getUnreadCount() {
+    return request<{ unread_count: number }>(
+      '/api/conversations/unread-count',
+      { method: 'GET' },
+    );
+  },
+
+  async listContacts() {
+    return request<{ contacts: import('@/types').MessagingContact[] }>(
+      '/api/conversations/contacts',
+      { method: 'GET' },
+    );
+  },
+
+  async createConversation(payload: {
+    type: 'dm' | 'channel';
+    participant_user_id?: string;
+    title?: string;
+    participant_user_ids?: string[];
+  }) {
+    return request<{
+      conversation: import('@/types').Conversation;
+      created: boolean;
+    }>('/api/conversations', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async getConversation(conversationId: string) {
+    return request<{ conversation: import('@/types').Conversation }>(
+      `/api/conversations/${conversationId}`,
+      { method: 'GET' },
+    );
+  },
+
+  async listMessages(
+    conversationId: string,
+    options: { limit?: number; before?: string; parent_message_id?: string; top_level_only?: boolean } = {},
+  ) {
+    const params = new URLSearchParams();
+    if (options.limit) params.set('limit', String(options.limit));
+    if (options.before) params.set('before', options.before);
+    if (options.parent_message_id) params.set('parent_message_id', options.parent_message_id);
+    if (options.top_level_only === false) params.set('top_level_only', 'false');
+    const query = params.toString();
+    return request<{ messages: import('@/types').ChatMessage[]; has_more: boolean }>(
+      `/api/conversations/${conversationId}/messages${query ? `?${query}` : ''}`,
+      { method: 'GET' },
+    );
+  },
+
+  async sendMessage(
+    conversationId: string,
+    payload: { body: string; parent_message_id?: string },
+  ) {
+    return request<{ message: import('@/types').ChatMessage }>(
+      `/api/conversations/${conversationId}/messages`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  async markRead(conversationId: string) {
+    return request<{ message: string; unread_count: number; read_at: string }>(
+      `/api/conversations/${conversationId}/read`,
+      { method: 'PATCH' },
+    );
+  },
+
+  async addParticipants(conversationId: string, participantUserIds: string[]) {
+    return request<{
+      message: string;
+      added_user_ids: string[];
+      participants: import('@/types').ConversationParticipant[];
+    }>(`/api/conversations/${conversationId}/participants`, {
+      method: 'POST',
+      body: JSON.stringify({ participant_user_ids: participantUserIds }),
+    });
+  },
+};
+
 export default {
   auth: authApi,
   health: healthApi,
   patientProperties: patientPropertiesApi,
+  messages: messagesApi,
 };

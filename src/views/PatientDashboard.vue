@@ -50,7 +50,7 @@
               </span>
             </div>
             <div class="appointment-body">
-              <h3>{{ appointment.doctor_name ? `Dr. ${appointment.doctor_name}` : 'Doctor Appointment' }}</h3>
+              <h3>{{ appointment.doctor_name ? `Dr. ${appointment.doctor_name}` : 'Provider Appointment' }}</h3>
               <p class="reason">{{ appointment.reason }}</p>
             </div>
           </div>
@@ -62,9 +62,9 @@
         <h2>Request New Appointment</h2>
         <form @submit.prevent="handleAppointmentRequest" class="appointment-form">
           <div class="form-group">
-            <label for="doctor">Select Doctor</label>
+            <label for="doctor">Select Provider</label>
             <select id="doctor" v-model="appointmentForm.doctorId" required :disabled="doctorsLoading">
-              <option value="">{{ doctorsLoading ? 'Loading doctors...' : 'Choose a doctor...' }}</option>
+              <option value="">{{ doctorsLoading ? 'Loading providers...' : 'Choose a provider...' }}</option>
               <option 
                 v-for="doctor in doctors" 
                 :key="doctor.id"
@@ -74,7 +74,7 @@
               </option>
             </select>
             <p v-if="!doctorsLoading && doctors.length === 0" class="error-message" style="margin-top: 8px; font-size: 0.85rem;">
-              Unable to load doctors. <a href="#" @click.prevent="loadDoctors" style="color: #2563eb;">Try again</a>
+              Unable to load providers. <a href="#" @click.prevent="loadDoctors" style="color: #2563eb;">Try again</a>
             </p>
           </div>
 
@@ -271,13 +271,13 @@ const loadDocuments = async () => {
   }
 }
 
-// Load available doctors
+// Load available providers
 const loadDoctors = async () => {
   doctorsLoading.value = true
   try {
     const token = localStorage.getItem('sessionToken')
     if (!token) {
-      console.error('Load doctors: No session token found')
+      console.error('Load providers: No session token found')
       return
     }
     
@@ -289,18 +289,18 @@ const loadDoctors = async () => {
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
-      console.error('Load doctors failed:', response.status, errorData)
+      console.error('Load providers failed:', response.status, errorData)
       return
     }
 
     const data = await response.json()
-    console.log('Doctors response:', data)
+    console.log('Providers response:', data)
     doctors.value = (data.doctors || []).map((doctor: any) => ({
       id: doctor.id,
       name: `${doctor.first_name} ${doctor.last_name}`
     }))
   } catch (err) {
-    console.error('Load doctors error:', err)
+    console.error('Load providers error:', err)
   } finally {
     doctorsLoading.value = false
   }
@@ -445,7 +445,7 @@ onMounted(() => {
   loadData()
 })
 
-// Retry loading doctors when switching to the request tab if they failed to load
+// Retry loading providers when switching to the request tab if they failed to load
 watch(activeTab, (newTab) => {
   if (newTab === 'appointments') {
     loadAppointments()

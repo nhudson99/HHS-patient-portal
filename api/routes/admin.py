@@ -40,7 +40,7 @@ _CLIENT_ID = os.getenv('AZURE_CLIENT_ID', '')
 BCRYPT_ROUNDS = int(os.getenv('BCRYPT_ROUNDS', 12))
 DEFAULT_LIST_LIMIT = 100
 MAX_LIST_LIMIT = 500
-DOCTOR_NOT_FOUND_ERROR = 'Doctor not found'
+DOCTOR_NOT_FOUND_ERROR = 'Provider not found'
 PATIENT_NOT_FOUND_ERROR = 'Patient not found'
 
 
@@ -312,7 +312,7 @@ def create_doctor():
     data = request.get_json(silent=True) or {}
     required = ['username', 'email', 'firstName', 'lastName', 'specialty', 'licenseNumber']
     if not all(data.get(field) for field in required):
-        return jsonify({'error': 'Missing required doctor fields'}), 400
+        return jsonify({'error': 'Missing required provider fields'}), 400
 
     temp_password = _generate_temp_password()
     password_hash, salt = _build_password_hash(temp_password)
@@ -443,7 +443,7 @@ def delete_doctor(doctor_id):
         return jsonify({'error': DOCTOR_NOT_FOUND_ERROR}), 404
 
     execute_query('DELETE FROM users WHERE id = %s', (row['user_id'],))
-    return jsonify({'message': 'Doctor deleted'}), 200
+    return jsonify({'message': 'Provider deleted'}), 200
 
 
 @admin_bp.route('/patients', methods=['GET'])

@@ -1,6 +1,6 @@
 """
 Patient properties routes
-Supports variable properties per patient (doctor-only)
+Supports variable properties per patient (provider-only)
 """
 
 from flask import Blueprint, request, jsonify, current_app

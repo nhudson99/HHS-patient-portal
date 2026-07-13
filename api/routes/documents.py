@@ -183,7 +183,7 @@ def serialize_document(doc):
 def list_documents(patient_id):
     """
     GET /api/documents/<patient_id>
-    List all documents for a patient (patients view own, doctors view any)
+    List all documents for a patient (patients view own, providers view any)
     """
     try:
         user = request.user
@@ -379,7 +379,7 @@ def delete_document(doc_id):
 def download_document(doc_id):
     """
     GET /api/documents/download/<doc_id>
-    Download a document file (patient or doctor)
+    Download a document file (patient or provider)
     """
     try:
         user = request.user

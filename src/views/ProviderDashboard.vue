@@ -1,5 +1,5 @@
 <template>
-  <div class="doctor-dashboard">
+  <div class="provider-dashboard">
     <div class="dashboard-header">
       <div class="header-main">
         <h1>Provider Day Schedule</h1>
@@ -508,7 +508,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.doctor-dashboard {
+.provider-dashboard {
   background: #f5f5f5;
   min-height: 100vh;
   padding-bottom: 2rem;

@@ -13,11 +13,15 @@ case "${1:-help}" in
 
   # ── Start everything in dev mode ───────────────────────────────────────────
   up)
-    echo -e "${BLUE}🚀 Starting dev stack (live Python reload, current dist/)...${NC}"
+    echo -e "${BLUE}🚀 Starting dev stack (Vue build + live Python reload)...${NC}"
+    # Force-recreate the one-shot frontend builder so ./dist matches current source.
+    # Plain `docker compose up` will not re-run an already-exited frontend container.
+    echo -e "${BLUE}⚡ Building Vue frontend (compose service: frontend)...${NC}"
+    $SUDO_CMD docker compose up --force-recreate --no-deps frontend
     $SUDO_CMD docker compose up -d
     echo -e "${GREEN}✅ Running at http://localhost:80${NC}"
     echo -e "${YELLOW}   Python changes: save the file → Flask auto-reloads (no rebuild)${NC}"
-    echo -e "${YELLOW}   Vue changes:    run  ./dev.sh frontend  → rebuild dist/${NC}"
+    echo -e "${YELLOW}   Vue changes:    ./dev.sh up  (or ./dev.sh frontend) to rebuild dist/${NC}"
     ;;
 
   # ── Rebuild + reload only the API container (e.g. new pip package) ─────────
@@ -37,18 +41,20 @@ case "${1:-help}" in
 
   # ── Rebuild Vue frontend, then reload nginx ────────────────────────────────
   frontend)
-    echo -e "${BLUE}⚡ Building Vue frontend...${NC}"
-    npm run build
-    echo -e "${BLUE}🔄 Reloading nginx...${NC}"
-    $SUDO_CMD docker compose exec nginx nginx -s reload
+    echo -e "${BLUE}⚡ Building Vue frontend (compose service: frontend)...${NC}"
+    $SUDO_CMD docker compose up --force-recreate --no-deps frontend
+    if $SUDO_CMD docker compose ps --status running --services 2>/dev/null | grep -qx nginx; then
+      echo -e "${BLUE}🔄 Reloading nginx...${NC}"
+      $SUDO_CMD docker compose exec nginx nginx -s reload
+    fi
     echo -e "${GREEN}✅ Frontend updated at http://localhost:80${NC}"
     ;;
 
   # ── Rebuild both frontend AND backend from scratch ─────────────────────────
   rebuild)
-    echo -e "${BLUE}🔨 Full rebuild (frontend + API image)...${NC}"
-    npm run build
+    echo -e "${BLUE}🔨 Full rebuild (frontend via compose + API image)...${NC}"
     $SUDO_CMD docker compose build api
+    $SUDO_CMD docker compose up --force-recreate --no-deps frontend
     $SUDO_CMD docker compose up -d
     echo -e "${GREEN}✅ Full rebuild complete${NC}"
     ;;
@@ -73,18 +79,18 @@ case "${1:-help}" in
   *)
     echo -e "${BLUE}Usage: ./dev.sh <command>${NC}"
     echo ""
-    echo "  up          Start stack (live Python reload + current dist/)"
+    echo "  up          Start stack (rebuilds Vue dist/, live Python reload)"
     echo "  reload      Recreate API container only (applies .env changes)"
-    echo "  frontend    Rebuild Vue → reload nginx  (for Vue/TS changes)"
+    echo "  frontend    Rebuild Vue via compose → reload nginx"
     echo "  api         Rebuild API image           (for requirements.txt changes)"
-    echo "  rebuild     Full rebuild (frontend + API image)"
+    echo "  rebuild     Full rebuild (frontend via compose + API image)"
     echo "  logs [svc]  Tail logs (default: api)"
     echo "  down        Stop everything"
     echo "  status      Show container status"
     echo ""
     echo -e "${YELLOW}Cheat-sheet:${NC}"
     echo "  Python file changed?  →  just save — Flask auto-reloads"
-    echo "  Vue file changed?     →  ./dev.sh frontend"
+    echo "  Vue file changed?     →  ./dev.sh frontend   (or ./dev.sh up)"
     echo "  Added a pip package?  →  ./dev.sh api"
     echo "  Changed .env values?  →  ./dev.sh reload"
     echo "  Clean slate?          →  ./dev.sh rebuild"
