@@ -180,3 +180,103 @@ def test_contacts_endpoint_returns_opposite_roles_for_patients(client):
     contacts = response.get_json()['contacts']
     assert len(contacts) >= 1
     assert all(contact['role'] == 'doctor' for contact in contacts)
+
+
+@requires_db
+def test_list_messages_since_returns_only_newer_rows(client):
+    doctor_headers = login_as(client, 'doctor1')
+    patient_user_id = _user_id('patient1')
+
+    create_response = client.post(
+        '/api/conversations',
+        headers=doctor_headers,
+        json={'type': 'dm', 'participant_user_id': patient_user_id},
+    )
+    assert create_response.status_code in (200, 201), create_response.get_json()
+    conversation_id = create_response.get_json()['conversation']['id']
+
+    first_response = client.post(
+        f'/api/conversations/{conversation_id}/messages',
+        headers=doctor_headers,
+        json={'body': 'First message for since filter'},
+    )
+    assert first_response.status_code == 201, first_response.get_json()
+    first = first_response.get_json()['message']
+
+    empty_delta = client.get(
+        f'/api/conversations/{conversation_id}/messages?since={first["created_at"]}',
+        headers=doctor_headers,
+    )
+    assert empty_delta.status_code == 200
+    assert empty_delta.get_json()['messages'] == []
+
+    second_response = client.post(
+        f'/api/conversations/{conversation_id}/messages',
+        headers=doctor_headers,
+        json={'body': 'Second message for since filter'},
+    )
+    assert second_response.status_code == 201, second_response.get_json()
+    second = second_response.get_json()['message']
+
+    delta_response = client.get(
+        f'/api/conversations/{conversation_id}/messages?since={first["created_at"]}',
+        headers=doctor_headers,
+    )
+    assert delta_response.status_code == 200
+    delta_messages = delta_response.get_json()['messages']
+    assert [msg['id'] for msg in delta_messages] == [second['id']]
+    assert delta_messages[0]['body'] == 'Second message for since filter'
+
+    invalid = client.get(
+        f'/api/conversations/{conversation_id}/messages?since=not-a-timestamp',
+        headers=doctor_headers,
+    )
+    assert invalid.status_code == 400
+
+
+@requires_db
+def test_list_thread_messages_since_returns_only_newer_replies(client):
+    doctor_headers = login_as(client, 'doctor1')
+    patient_headers = login_as(client, 'patient1', 'Patient123!')
+    patient_user_id = _user_id('patient1')
+
+    create_response = client.post(
+        '/api/conversations',
+        headers=doctor_headers,
+        json={'type': 'dm', 'participant_user_id': patient_user_id},
+    )
+    assert create_response.status_code in (200, 201), create_response.get_json()
+    conversation_id = create_response.get_json()['conversation']['id']
+
+    parent_response = client.post(
+        f'/api/conversations/{conversation_id}/messages',
+        headers=doctor_headers,
+        json={'body': 'Thread root for since filter'},
+    )
+    assert parent_response.status_code == 201, parent_response.get_json()
+    parent = parent_response.get_json()['message']
+
+    first_reply_response = client.post(
+        f'/api/conversations/{conversation_id}/messages',
+        headers=patient_headers,
+        json={'body': 'First reply', 'parent_message_id': parent['id']},
+    )
+    assert first_reply_response.status_code == 201, first_reply_response.get_json()
+    first_reply = first_reply_response.get_json()['message']
+
+    second_reply_response = client.post(
+        f'/api/conversations/{conversation_id}/messages',
+        headers=doctor_headers,
+        json={'body': 'Second reply', 'parent_message_id': parent['id']},
+    )
+    assert second_reply_response.status_code == 201, second_reply_response.get_json()
+    second_reply = second_reply_response.get_json()['message']
+
+    delta_response = client.get(
+        f'/api/conversations/{conversation_id}/messages'
+        f'?parent_message_id={parent["id"]}&since={first_reply["created_at"]}',
+        headers=doctor_headers,
+    )
+    assert delta_response.status_code == 200
+    delta_messages = delta_response.get_json()['messages']
+    assert [msg['id'] for msg in delta_messages] == [second_reply['id']]

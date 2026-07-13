@@ -599,8 +599,16 @@ def list_messages(conversation_id):
             limit = DEFAULT_MESSAGE_LIMIT
 
         before = request.args.get('before')
+        since_raw = request.args.get('since')
         parent_message_id = request.args.get('parent_message_id')
         top_level_only = request.args.get('top_level_only', 'true').lower() != 'false'
+
+        since = None
+        if since_raw:
+            try:
+                since = datetime.fromisoformat(since_raw.replace('Z', '+00:00'))
+            except (TypeError, ValueError, AttributeError):
+                return jsonify({'error': 'Invalid since timestamp'}), 400
 
         params = [conversation_id]
         filters = ['m.conversation_id = %s']
@@ -616,7 +624,14 @@ def list_messages(conversation_id):
             filters.append('m.created_at < %s')
             params.append(before)
 
+        if since is not None:
+            filters.append('m.created_at > %s')
+            params.append(since)
+
         params.append(limit)
+        # Incremental polls (`since`) return ascending rows ready to append;
+        # page loads use DESC + reverse for the latest window.
+        order_dir = 'ASC' if since is not None else 'DESC'
         rows = execute_query(
             f"""
             SELECT m.id, m.conversation_id, m.sender_user_id, m.parent_message_id,
@@ -629,15 +644,18 @@ def list_messages(conversation_id):
                    ) AS reply_count
             FROM messages m
             WHERE {' AND '.join(filters)}
-            ORDER BY m.created_at DESC
+            ORDER BY m.created_at {order_dir}
             LIMIT %s
             """,
             tuple(params),
             fetch_all=True,
         ) or []
 
-        # Return chronological order for the UI
-        messages = [_serialize_message(row) for row in reversed(rows)]
+        if since is not None:
+            messages = [_serialize_message(row) for row in rows]
+        else:
+            # Return chronological order for the UI
+            messages = [_serialize_message(row) for row in reversed(rows)]
         log_data_access(user['id'], 'messages', conversation_id, 'VIEW', request)
         return jsonify({
             'messages': messages,

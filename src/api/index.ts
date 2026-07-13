@@ -273,11 +273,18 @@ export const messagesApi = {
 
   async listMessages(
     conversationId: string,
-    options: { limit?: number; before?: string; parent_message_id?: string; top_level_only?: boolean } = {},
+    options: {
+      limit?: number;
+      before?: string;
+      since?: string;
+      parent_message_id?: string;
+      top_level_only?: boolean;
+    } = {},
   ) {
     const params = new URLSearchParams();
     if (options.limit) params.set('limit', String(options.limit));
     if (options.before) params.set('before', options.before);
+    if (options.since) params.set('since', options.since);
     if (options.parent_message_id) params.set('parent_message_id', options.parent_message_id);
     if (options.top_level_only === false) params.set('top_level_only', 'false');
     const query = params.toString();
