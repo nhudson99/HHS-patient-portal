@@ -347,6 +347,20 @@ def list_conversations():
                        LIMIT 1
                    ) AS last_message_body,
                    (
+                       SELECT m.id
+                       FROM messages m
+                       WHERE m.conversation_id = c.id AND m.deleted_at IS NULL
+                       ORDER BY m.created_at DESC
+                       LIMIT 1
+                   ) AS last_message_id,
+                   (
+                       SELECT m.parent_message_id
+                       FROM messages m
+                       WHERE m.conversation_id = c.id AND m.deleted_at IS NULL
+                       ORDER BY m.created_at DESC
+                       LIMIT 1
+                   ) AS last_message_parent_id,
+                   (
                        SELECT m.created_at
                        FROM messages m
                        WHERE m.conversation_id = c.id AND m.deleted_at IS NULL
@@ -396,9 +410,15 @@ def list_conversations():
                 'participants': participants,
                 'unread_count': unread,
                 'last_message': {
+                    'id': str(row['last_message_id']) if row.get('last_message_id') else None,
                     'body': row.get('last_message_body'),
                     'created_at': _iso(row.get('last_message_at')),
                     'sender_name': last_sender_name,
+                    'parent_message_id': (
+                        str(row['last_message_parent_id'])
+                        if row.get('last_message_parent_id')
+                        else None
+                    ),
                 } if row.get('last_message_body') else None,
             })
 
@@ -599,8 +619,25 @@ def list_messages(conversation_id):
             limit = DEFAULT_MESSAGE_LIMIT
 
         before = request.args.get('before')
+        since_raw = request.args.get('since')
         parent_message_id = request.args.get('parent_message_id')
         top_level_only = request.args.get('top_level_only', 'true').lower() != 'false'
+
+        since = None
+        if since_raw:
+            # Unencoded '+' in ISO offsets becomes a space in query strings.
+            normalized = str(since_raw).strip()
+            if normalized.endswith(('Z', 'z')):
+                normalized = f'{normalized[:-1]}+00:00'
+            normalized = re.sub(
+                r'(\d{2}:\d{2}:\d{2}(?:\.\d+)?) (\d{2}:\d{2})$',
+                r'\1+\2',
+                normalized,
+            )
+            try:
+                since = datetime.fromisoformat(normalized)
+            except (TypeError, ValueError, AttributeError):
+                return jsonify({'error': 'Invalid since timestamp'}), 400
 
         params = [conversation_id]
         filters = ['m.conversation_id = %s']
@@ -616,7 +653,14 @@ def list_messages(conversation_id):
             filters.append('m.created_at < %s')
             params.append(before)
 
+        if since is not None:
+            filters.append('m.created_at > %s')
+            params.append(since)
+
         params.append(limit)
+        # Incremental polls (`since`) return ascending rows ready to append;
+        # page loads use DESC + reverse for the latest window.
+        order_dir = 'ASC' if since is not None else 'DESC'
         rows = execute_query(
             f"""
             SELECT m.id, m.conversation_id, m.sender_user_id, m.parent_message_id,
@@ -629,15 +673,18 @@ def list_messages(conversation_id):
                    ) AS reply_count
             FROM messages m
             WHERE {' AND '.join(filters)}
-            ORDER BY m.created_at DESC
+            ORDER BY m.created_at {order_dir}
             LIMIT %s
             """,
             tuple(params),
             fetch_all=True,
         ) or []
 
-        # Return chronological order for the UI
-        messages = [_serialize_message(row) for row in reversed(rows)]
+        if since is not None:
+            messages = [_serialize_message(row) for row in rows]
+        else:
+            # Return chronological order for the UI
+            messages = [_serialize_message(row) for row in reversed(rows)]
         log_data_access(user['id'], 'messages', conversation_id, 'VIEW', request)
         return jsonify({
             'messages': messages,

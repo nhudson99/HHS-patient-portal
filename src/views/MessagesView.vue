@@ -289,13 +289,16 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { formatDistanceToNow, parseISO, format } from 'date-fns'
 import { messagesApi } from '@/api'
 import type { ChatMessage, Conversation, MessagingContact } from '@/types'
 import { getCurrentUser } from '@/store'
 
-const POLL_MS = 15000
+const POLL_MS = 4000
 
+const route = useRoute()
+const router = useRouter()
 const currentUser = getCurrentUser()
 const currentUserId = String(currentUser?.id || '')
 const canCreateChannel = currentUser?.role === 'doctor'
@@ -426,6 +429,22 @@ async function loadConversations(options: { quiet?: boolean } = {}) {
   }
 }
 
+function mergeById(existing: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
+  if (incoming.length === 0) return existing
+  const byId = new Map(existing.map((message) => [message.id, message]))
+  for (const message of incoming) {
+    byId.set(message.id, message)
+  }
+  return Array.from(byId.values()).sort((a, b) => a.created_at.localeCompare(b.created_at))
+}
+
+function newestCreatedAt(items: ChatMessage[]): string | undefined {
+  if (items.length === 0) return undefined
+  return items.reduce((latest, message) =>
+    message.created_at > latest ? message.created_at : latest,
+  items[0].created_at)
+}
+
 async function loadMessages(options: { quiet?: boolean } = {}) {
   const conversationId = selectedConversationId.value
   if (!conversationId) {
@@ -437,8 +456,14 @@ async function loadMessages(options: { quiet?: boolean } = {}) {
     messagesLoading.value = true
   }
   messagesError.value = ''
-  const response = await messagesApi.listMessages(conversationId)
+
+  const since = options.quiet ? newestCreatedAt(messages.value) : undefined
+  const response = await messagesApi.listMessages(conversationId, since ? { since } : {})
   messagesLoading.value = false
+
+  if (selectedConversationId.value !== conversationId) {
+    return
+  }
 
   if (response.error || !response.data) {
     messagesError.value = response.error || 'Failed to load messages'
@@ -446,8 +471,16 @@ async function loadMessages(options: { quiet?: boolean } = {}) {
   }
 
   const previousCount = messages.value.length
-  messages.value = response.data.messages
+  if (since) {
+    messages.value = mergeById(messages.value, response.data.messages)
+  } else {
+    messages.value = response.data.messages
+  }
   await messagesApi.markRead(conversationId)
+
+  if (selectedConversationId.value !== conversationId) {
+    return
+  }
 
   const conversation = conversations.value.find((c) => c.id === conversationId)
   if (conversation) {
@@ -491,6 +524,39 @@ async function openThread(message: ChatMessage) {
   await loadThreadReplies()
 }
 
+async function openThreadById(threadId: string) {
+  const root = messages.value.find((message) => message.id === threadId)
+  if (root) {
+    await openThread(root)
+  }
+}
+
+async function applyRouteTarget() {
+  const conversationId = typeof route.query.conversation === 'string'
+    ? route.query.conversation
+    : null
+  const threadId = typeof route.query.thread === 'string' ? route.query.thread : null
+  if (!conversationId) return
+
+  if (!conversations.value.some((conversation) => conversation.id === conversationId)) {
+    await loadConversations({ quiet: true })
+  }
+
+  selectedConversationId.value = conversationId
+  closeThread()
+  await loadMessages()
+  if (threadId) {
+    await openThreadById(threadId)
+  }
+
+  if (route.query.conversation || route.query.thread) {
+    const nextQuery = { ...route.query }
+    delete nextQuery.conversation
+    delete nextQuery.thread
+    await router.replace({ path: '/messages', query: nextQuery })
+  }
+}
+
 function closeThread() {
   activeThreadRoot.value = null
   threadReplies.value = []
@@ -505,15 +571,38 @@ async function loadThreadReplies(options: { quiet?: boolean } = {}) {
   if (!options.quiet) {
     threadLoading.value = true
   }
+  const since = options.quiet ? newestCreatedAt(threadReplies.value) : undefined
   const response = await messagesApi.listMessages(conversationId, {
     parent_message_id: root.id,
+    ...(since ? { since } : {}),
   })
   threadLoading.value = false
+
+  if (
+    selectedConversationId.value !== conversationId ||
+    activeThreadRoot.value?.id !== root.id
+  ) {
+    return
+  }
 
   if (response.error || !response.data) {
     return
   }
-  threadReplies.value = response.data.messages
+
+  const previousCount = threadReplies.value.length
+  if (since) {
+    threadReplies.value = mergeById(threadReplies.value, response.data.messages)
+  } else {
+    threadReplies.value = response.data.messages
+  }
+
+  const added = threadReplies.value.length - previousCount
+  if (added > 0) {
+    const parent = messages.value.find((m) => m.id === root.id)
+    if (parent) {
+      parent.reply_count = Math.max(parent.reply_count, threadReplies.value.length)
+    }
+  }
 }
 
 async function sendThreadReply() {
@@ -641,6 +730,9 @@ async function submitAddPeople() {
 }
 
 async function pollUpdates() {
+  if (typeof document !== 'undefined' && document.hidden) {
+    return
+  }
   await loadConversations({ quiet: true })
   if (selectedConversationId.value) {
     await loadMessages({ quiet: true })
@@ -650,25 +742,49 @@ async function pollUpdates() {
   }
 }
 
-watch(selectedConversationId, async (id) => {
-  if (id) {
-    await loadMessages()
+function onVisibilityChange() {
+  if (typeof document !== 'undefined' && !document.hidden) {
+    void pollUpdates()
   }
+}
+
+watch(selectedConversationId, async (id, previousId) => {
+  if (!id || id === previousId) return
+  // Deep-link handler loads messages itself.
+  if (typeof route.query.conversation === 'string') return
+  await loadMessages()
 })
+
+watch(
+  () => [route.query.conversation, route.query.thread] as const,
+  async ([conversationId]) => {
+    if (typeof conversationId === 'string') {
+      await applyRouteTarget()
+    }
+  },
+)
 
 onMounted(async () => {
   await loadConversations()
-  if (selectedConversationId.value) {
+  if (typeof route.query.conversation === 'string') {
+    await applyRouteTarget()
+  } else if (selectedConversationId.value) {
     await loadMessages()
   }
   pollTimer = globalThis.setInterval(() => {
     void pollUpdates()
   }, POLL_MS)
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', onVisibilityChange)
+  }
 })
 
 onBeforeUnmount(() => {
   if (pollTimer) {
     globalThis.clearInterval(pollTimer)
+  }
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', onVisibilityChange)
   }
 })
 </script>
