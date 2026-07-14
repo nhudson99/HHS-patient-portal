@@ -49,7 +49,7 @@
               class="provider-column-header"
               :style="providerHeaderStyle(provider)"
             >
-              {{ provider.label }} ({{ provider.events.length }})
+              {{ provider.label }} ({{ provider.layoutEvents.length }})
             </div>
             <div class="time-axis-spacer" aria-hidden="true"></div>
           </div>
@@ -85,28 +85,28 @@
               </div>
 
               <button
-                v-for="event in provider.events"
-                :key="event.id"
+                v-for="item in provider.layoutEvents"
+                :key="item.event.id"
                 type="button"
                 class="schedule-block"
-                :class="scheduleBlockClasses(event)"
-                :style="scheduleBlockStyle(event, provider)"
-                @click="selectScheduleEvent(event)"
+                :class="scheduleBlockClasses(item.event)"
+                :style="scheduleBlockStyle(item)"
+                @click="selectScheduleEvent(item.event)"
               >
-                <div class="block-title">{{ displayEventTitle(event) }}</div>
-                <div class="block-meta">{{ getEventTimeLabel(event) }}</div>
-                <div class="block-meta">{{ formatEventType(event.event_type) }}</div>
+                <div class="block-title">{{ displayEventTitle(item.event) }}</div>
+                <div class="block-meta">{{ getEventTimeLabel(item.event) }}</div>
+                <div class="block-meta">{{ formatEventType(item.event.event_type) }}</div>
                 <div
-                  v-if="event.is_own_event && event.description"
+                  v-if="item.event.is_own_event && item.event.description"
                   class="block-description"
                 >
-                  {{ event.description }}
+                  {{ item.event.description }}
                 </div>
                 <div
-                  v-if="isAppointmentEvent(event) && getAppointmentStatus(event)"
+                  v-if="isAppointmentEvent(item.event) && getAppointmentStatus(item.event)"
                   class="block-meta"
                 >
-                  {{ getAppointmentStatus(event) }}
+                  {{ getAppointmentStatus(item.event) }}
                 </div>
               </button>
             </div>
@@ -282,12 +282,20 @@ interface ClinicProvider {
   last_name?: string
 }
 
+interface LaidOutEvent {
+  event: DashboardEvent
+  lane: number
+  laneCount: number
+  visibleStart: number
+  visibleEnd: number
+}
+
 interface ProviderColumn {
   key: string
   doctorId: string
   label: string
   colorIndex: number
-  events: DashboardEvent[]
+  layoutEvents: LaidOutEvent[]
 }
 
 interface EventForm {
@@ -387,16 +395,7 @@ const dayEvents = computed(() => {
 
   return events.value
     .filter((event) => event.event_date === dateStr)
-    .filter((event) => {
-      if (!query) {
-        return true
-      }
-      if (!event.is_own_event) {
-        return false
-      }
-      const haystack = `${event.patient_name || ''} ${event.title || ''}`.toLowerCase()
-      return haystack.includes(query)
-    })
+    .filter((event) => matchesPatientSearch(event, query))
     .sort((left, right) => getSortTime(left).localeCompare(getSortTime(right)))
 })
 
@@ -422,7 +421,7 @@ const providerColumns = computed<ProviderColumn[]>(() => {
       doctorId,
       label,
       colorIndex: index % PROVIDER_HEADER_COLORS.length,
-      events: sortProviderEvents(eventsByDoctor.get(doctorId) || [])
+      layoutEvents: layoutProviderEvents(eventsByDoctor.get(doctorId) || [])
     })
   })
 
@@ -436,11 +435,21 @@ const providerColumns = computed<ProviderColumn[]>(() => {
       doctorId,
       label,
       colorIndex: columns.length % PROVIDER_HEADER_COLORS.length,
-      events: sortProviderEvents(providerEvents)
+      layoutEvents: layoutProviderEvents(providerEvents)
     })
   }
 
   return columns.sort((left, right) => left.label.localeCompare(right.label))
+})
+
+const visibleEventIds = computed(() => {
+  const ids = new Set<string>()
+  for (const column of providerColumns.value) {
+    for (const item of column.layoutEvents) {
+      ids.add(item.event.id)
+    }
+  }
+  return ids
 })
 
 const boardGridStyle = computed(() => ({
@@ -457,12 +466,16 @@ function formatProviderName(provider: ClinicProvider): string {
   return name || 'Unknown provider'
 }
 
-function sortProviderEvents(providerEvents: DashboardEvent[]): DashboardEvent[] {
-  return [...providerEvents].sort((left, right) => {
-    const timeCompare = getSortTime(left).localeCompare(getSortTime(right))
-    if (timeCompare !== 0) return timeCompare
-    return left.title.localeCompare(right.title)
-  })
+function matchesPatientSearch(event: DashboardEvent, query: string): boolean {
+  if (!query) {
+    return true
+  }
+  // Keep other providers' redacted availability visible on the clinic-wide board.
+  if (!event.is_own_event) {
+    return true
+  }
+  const haystack = `${event.patient_name || ''} ${event.title || ''}`.toLowerCase()
+  return haystack.includes(query)
 }
 
 function formatHourLabel(hour: number): string {
@@ -495,7 +508,7 @@ function goToToday() {
 }
 
 function getSortTime(event: DashboardEvent): string {
-  if (!event.start_time) {
+  if (event.is_all_day || !event.start_time) {
     return '00:00'
   }
   return event.start_time.slice(0, 5)
@@ -515,7 +528,10 @@ function parseTimeToMinutes(timeStr?: string): number | null {
 }
 
 function getEventStartMinutes(event: DashboardEvent): number {
-  if (event.is_all_day || !event.start_time) {
+  if (event.is_all_day) {
+    return GRID_START_MINUTES
+  }
+  if (!event.start_time) {
     return GRID_START_MINUTES
   }
   return parseTimeToMinutes(event.start_time) ?? GRID_START_MINUTES
@@ -523,7 +539,7 @@ function getEventStartMinutes(event: DashboardEvent): number {
 
 function getEventEndMinutes(event: DashboardEvent): number {
   if (event.is_all_day) {
-    return Math.min(GRID_START_MINUTES + DEFAULT_DURATION_MINUTES, GRID_END_MINUTES)
+    return GRID_END_MINUTES
   }
   const start = getEventStartMinutes(event)
   const end = parseTimeToMinutes(event.end_time)
@@ -531,6 +547,117 @@ function getEventEndMinutes(event: DashboardEvent): number {
     return end
   }
   return start + DEFAULT_DURATION_MINUTES
+}
+
+/** Clamp to the visible grid window; null if the event does not intersect it. */
+function getVisibleRange(event: DashboardEvent): { start: number; end: number } | null {
+  const rawStart = getEventStartMinutes(event)
+  const rawEnd = getEventEndMinutes(event)
+  if (rawEnd <= GRID_START_MINUTES || rawStart >= GRID_END_MINUTES) {
+    return null
+  }
+  const start = Math.max(rawStart, GRID_START_MINUTES)
+  const end = Math.min(rawEnd, GRID_END_MINUTES)
+  if (end <= start) {
+    return null
+  }
+  return { start, end }
+}
+
+function eventsOverlap(
+  left: { start: number; end: number },
+  right: { start: number; end: number }
+): boolean {
+  return left.start < right.end && right.start < left.end
+}
+
+function layoutProviderEvents(providerEvents: DashboardEvent[]): LaidOutEvent[] {
+  const visible = providerEvents
+    .map((event) => {
+      const range = getVisibleRange(event)
+      if (!range) {
+        return null
+      }
+      return {
+        event,
+        visibleStart: range.start,
+        visibleEnd: range.end
+      }
+    })
+    .filter((item): item is { event: DashboardEvent; visibleStart: number; visibleEnd: number } => item != null)
+    .sort((left, right) => {
+      if (left.visibleStart !== right.visibleStart) {
+        return left.visibleStart - right.visibleStart
+      }
+      if (left.visibleEnd !== right.visibleEnd) {
+        return left.visibleEnd - right.visibleEnd
+      }
+      return left.event.title.localeCompare(right.event.title)
+    })
+
+  if (visible.length === 0) {
+    return []
+  }
+
+  const laneEnds: number[] = []
+  const provisional: Array<{
+    event: DashboardEvent
+    visibleStart: number
+    visibleEnd: number
+    lane: number
+  }> = []
+
+  for (const item of visible) {
+    let lane = laneEnds.findIndex((end) => end <= item.visibleStart)
+    if (lane === -1) {
+      lane = laneEnds.length
+      laneEnds.push(item.visibleEnd)
+    } else {
+      laneEnds[lane] = item.visibleEnd
+    }
+    provisional.push({ ...item, lane })
+  }
+
+  // Within each overlapping cluster, laneCount is the max lane index + 1.
+  return provisional.map((item) => {
+    const cluster = new Set<string>([item.event.id])
+    let changed = true
+    while (changed) {
+      changed = false
+      for (const candidate of provisional) {
+        if (cluster.has(candidate.event.id)) {
+          continue
+        }
+        const overlapsCluster = provisional.some(
+          (member) =>
+            cluster.has(member.event.id)
+            && eventsOverlap(
+              { start: member.visibleStart, end: member.visibleEnd },
+              { start: candidate.visibleStart, end: candidate.visibleEnd }
+            )
+        )
+        if (overlapsCluster) {
+          cluster.add(candidate.event.id)
+          changed = true
+        }
+      }
+    }
+
+    let maxLane = 0
+    for (const member of provisional) {
+      if (cluster.has(member.event.id)) {
+        maxLane = Math.max(maxLane, member.lane)
+      }
+    }
+
+    return {
+      event: item.event,
+      lane: item.lane,
+      laneCount: maxLane + 1,
+      visibleStart: item.visibleStart,
+      visibleEnd: item.visibleEnd
+    }
+  })
 }
 
 function getEventTimeLabel(event: DashboardEvent): string {
@@ -605,21 +732,30 @@ function scheduleBlockClasses(event: DashboardEvent) {
     'schedule-block--other': !event.is_own_event,
     'schedule-block--blocked': event.event_type === 'blocked_time',
     'schedule-block--meeting': event.event_type === 'meeting',
+    'schedule-block--all-day': event.is_all_day,
     'schedule-block--selected': selectedEvent.value?.id === event.id
   }
 }
 
-function scheduleBlockStyle(event: DashboardEvent, _provider: ProviderColumn) {
-  const start = Math.max(getEventStartMinutes(event), GRID_START_MINUTES)
-  const end = Math.min(getEventEndMinutes(event), GRID_END_MINUTES)
-  const top = ((start - GRID_START_MINUTES) / SLOT_MINUTES) * SLOT_HEIGHT_PX
-  const height = Math.max(((end - start) / SLOT_MINUTES) * SLOT_HEIGHT_PX, SLOT_HEIGHT_PX)
-  const background = event.color || '#dbeafe'
+function scheduleBlockStyle(item: LaidOutEvent) {
+  const top = ((item.visibleStart - GRID_START_MINUTES) / SLOT_MINUTES) * SLOT_HEIGHT_PX
+  const height = Math.max(
+    ((item.visibleEnd - item.visibleStart) / SLOT_MINUTES) * SLOT_HEIGHT_PX,
+    SLOT_HEIGHT_PX
+  )
+  const laneCount = Math.max(item.laneCount, 1)
+  const widthPercent = 100 / laneCount
+  const leftPercent = item.lane * widthPercent
+  const background = item.event.color || '#dbeafe'
 
   return {
     top: `${top}px`,
     height: `${height}px`,
-    backgroundColor: background
+    left: `calc(${leftPercent}% + 2px)`,
+    width: `calc(${widthPercent}% - 4px)`,
+    right: 'auto',
+    backgroundColor: background,
+    zIndex: item.event.is_all_day ? 1 : 2 + item.lane
   }
 }
 
@@ -815,9 +951,8 @@ async function loadSchedule() {
 
   try {
     await Promise.all([loadProviders(), loadEvents()])
-    if (selectedEvent.value) {
-      const stillPresent = events.value.find((event) => event.id === selectedEvent.value?.id)
-      selectedEvent.value = stillPresent || null
+    if (selectedEvent.value && !visibleEventIds.value.has(selectedEvent.value.id)) {
+      clearSelectedEvent()
     }
   } catch (error) {
     console.error('Error loading schedule:', error)
@@ -829,6 +964,12 @@ async function loadSchedule() {
 
 watch(currentDate, () => {
   loadSchedule()
+})
+
+watch(visibleEventIds, (ids) => {
+  if (selectedEvent.value && !ids.has(selectedEvent.value.id)) {
+    clearSelectedEvent()
+  }
 })
 
 onMounted(() => {
@@ -1060,8 +1201,7 @@ onMounted(() => {
 
 .schedule-block {
   position: absolute;
-  left: 3px;
-  right: 3px;
+  box-sizing: border-box;
   z-index: 2;
   border: 1px solid rgba(31, 41, 55, 0.25);
   border-radius: 2px;
@@ -1075,7 +1215,7 @@ onMounted(() => {
 .schedule-block:hover,
 .schedule-block--selected {
   outline: 2px solid #1d4ed8;
-  z-index: 3;
+  z-index: 8 !important;
 }
 
 .schedule-block--other {
@@ -1096,6 +1236,12 @@ onMounted(() => {
 
 .schedule-block--meeting {
   border-color: #7c3aed;
+}
+
+.schedule-block--all-day {
+  border-style: solid;
+  border-color: #4b5563;
+  opacity: 0.88;
 }
 
 .block-title {
