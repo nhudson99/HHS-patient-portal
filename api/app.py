@@ -38,6 +38,7 @@ from api.routes.appointments import appointments_bp
 from api.routes.feature_requests import feature_requests_bp
 from api.routes.messages import messages_bp
 from api.routes.admin import admin_bp
+from api.routes.chart import chart_bp
 
 # Create Flask app
 app = Flask(__name__)
@@ -96,6 +97,7 @@ app.register_blueprint(appointments_bp)
 app.register_blueprint(feature_requests_bp)
 app.register_blueprint(messages_bp)
 app.register_blueprint(admin_bp)
+app.register_blueprint(chart_bp)
 
 # Error handlers
 @app.errorhandler(404)

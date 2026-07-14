@@ -225,6 +225,180 @@ export const patientPropertiesApi = {
 };
 
 /**
+ * Provider chart API (allergies, medications, problems, summary)
+ */
+export const chartApi = {
+  async getSummary(patientId: string) {
+    return request<{ summary: import('@/types').ChartSummary }>(
+      `/api/chart/${patientId}/summary`,
+      { method: 'GET' },
+    );
+  },
+
+  async listAllergies(patientId: string) {
+    return request<{ allergies: import('@/types').Allergy[] }>(
+      `/api/chart/${patientId}/allergies`,
+      { method: 'GET' },
+    );
+  },
+
+  async createAllergy(
+    patientId: string,
+    payload: {
+      allergen: string
+      reaction?: string
+      severity?: import('@/types').AllergySeverity
+      status?: import('@/types').AllergyStatus
+      notes?: string
+    },
+  ) {
+    return request<{ allergy: import('@/types').Allergy }>(
+      `/api/chart/${patientId}/allergies`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    );
+  },
+
+  async updateAllergy(
+    patientId: string,
+    allergyId: string,
+    payload: Partial<{
+      allergen: string
+      reaction: string | null
+      severity: import('@/types').AllergySeverity
+      status: import('@/types').AllergyStatus
+      notes: string | null
+    }>,
+  ) {
+    return request<{ allergy: import('@/types').Allergy }>(
+      `/api/chart/${patientId}/allergies/${allergyId}`,
+      { method: 'PUT', body: JSON.stringify(payload) },
+    );
+  },
+
+  async deleteAllergy(patientId: string, allergyId: string) {
+    return request<{ message: string }>(
+      `/api/chart/${patientId}/allergies/${allergyId}`,
+      { method: 'DELETE' },
+    );
+  },
+
+  async listMedications(patientId: string) {
+    return request<{ medications: import('@/types').Medication[] }>(
+      `/api/chart/${patientId}/medications`,
+      { method: 'GET' },
+    );
+  },
+
+  async createMedication(
+    patientId: string,
+    payload: {
+      name: string
+      dosage?: string
+      frequency?: string
+      route?: string
+      status?: import('@/types').MedicationStatus
+      start_date?: string | null
+      end_date?: string | null
+      notes?: string
+    },
+  ) {
+    return request<{ medication: import('@/types').Medication }>(
+      `/api/chart/${patientId}/medications`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    );
+  },
+
+  async updateMedication(
+    patientId: string,
+    medicationId: string,
+    payload: Partial<{
+      name: string
+      dosage: string | null
+      frequency: string | null
+      route: string | null
+      status: import('@/types').MedicationStatus
+      start_date: string | null
+      end_date: string | null
+      notes: string | null
+    }>,
+  ) {
+    return request<{ medication: import('@/types').Medication }>(
+      `/api/chart/${patientId}/medications/${medicationId}`,
+      { method: 'PUT', body: JSON.stringify(payload) },
+    );
+  },
+
+  async deleteMedication(patientId: string, medicationId: string) {
+    return request<{ message: string }>(
+      `/api/chart/${patientId}/medications/${medicationId}`,
+      { method: 'DELETE' },
+    );
+  },
+
+  async listProblems(patientId: string) {
+    return request<{ problems: import('@/types').Problem[] }>(
+      `/api/chart/${patientId}/problems`,
+      { method: 'GET' },
+    );
+  },
+
+  async createProblem(
+    patientId: string,
+    payload: {
+      name: string
+      status?: import('@/types').ProblemStatus
+      onset_date?: string | null
+      resolved_date?: string | null
+      notes?: string
+    },
+  ) {
+    return request<{ problem: import('@/types').Problem }>(
+      `/api/chart/${patientId}/problems`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    );
+  },
+
+  async updateProblem(
+    patientId: string,
+    problemId: string,
+    payload: Partial<{
+      name: string
+      status: import('@/types').ProblemStatus
+      onset_date: string | null
+      resolved_date: string | null
+      notes: string | null
+    }>,
+  ) {
+    return request<{ problem: import('@/types').Problem }>(
+      `/api/chart/${patientId}/problems/${problemId}`,
+      { method: 'PUT', body: JSON.stringify(payload) },
+    );
+  },
+
+  async deleteProblem(patientId: string, problemId: string) {
+    return request<{ message: string }>(
+      `/api/chart/${patientId}/problems/${problemId}`,
+      { method: 'DELETE' },
+    );
+  },
+};
+
+/**
+ * Documents API helpers (visibility toggle)
+ */
+export const documentsApi = {
+  async setVisibility(docId: string, patientVisible: boolean) {
+    return request<{ document: import('@/types').PatientDocument; message: string }>(
+      `/api/documents/${docId}/visibility`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ patient_visible: patientVisible }),
+      },
+    );
+  },
+};
+
+/**
  * In-app messaging API (DMs, channels, threads)
  */
 export const messagesApi = {
@@ -330,5 +504,7 @@ export default {
   auth: authApi,
   health: healthApi,
   patientProperties: patientPropertiesApi,
+  chart: chartApi,
+  documents: documentsApi,
   messages: messagesApi,
 };

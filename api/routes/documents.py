@@ -22,6 +22,13 @@ FAILED_RETRIEVE_DOCUMENTS_ERROR = 'Failed to retrieve documents'
 FAILED_UPLOAD_DOCUMENTS_ERROR = 'Failed to upload documents'
 FAILED_RENAME_DOCUMENT_ERROR = 'Failed to rename document'
 FAILED_DELETE_DOCUMENT_ERROR = 'Failed to delete document'
+FAILED_UPDATE_VISIBILITY_ERROR = 'Failed to update document visibility'
+
+DOCUMENT_COLUMNS = """
+    id, patient_id, doctor_id, document_type, title, description,
+    file_path, file_name, file_size, document_date, patient_visible,
+    created_at, updated_at
+"""
 
 DOCUMENTS_STORAGE_BACKEND = (os.getenv('DOCUMENTS_STORAGE_BACKEND') or 'local').strip().lower()
 LOCAL_UPLOAD_DIR = Path((os.getenv('DOCUMENTS_LOCAL_DIR') or str(Path.home() / 'hhs-documents')).strip())
@@ -178,12 +185,20 @@ def serialize_document(doc):
     return result
 
 
+def _parse_patient_visible(raw_value, default=False):
+    if raw_value is None:
+        return default
+    if isinstance(raw_value, bool):
+        return raw_value
+    return str(raw_value).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
 @documents_bp.route('/<patient_id>', methods=['GET'])
 @authenticate
 def list_documents(patient_id):
     """
     GET /api/documents/<patient_id>
-    List all documents for a patient (patients view own, providers view any)
+    List documents for a patient (patients see only patient_visible docs)
     """
     try:
         user = request.user
@@ -194,17 +209,21 @@ def list_documents(patient_id):
             patient = execute_query(patient_query, (user['id'],), fetch_one=True)
             if not patient or patient['id'] != patient_id:
                 return jsonify({'error': INSUFFICIENT_PERMISSIONS_ERROR}), 403
-        elif user.get('role') != 'doctor':
+            query = f"""
+                SELECT {DOCUMENT_COLUMNS}
+                FROM medical_documents
+                WHERE patient_id = %s AND patient_visible = TRUE
+                ORDER BY created_at DESC
+            """
+        elif user.get('role') == 'doctor':
+            query = f"""
+                SELECT {DOCUMENT_COLUMNS}
+                FROM medical_documents
+                WHERE patient_id = %s
+                ORDER BY created_at DESC
+            """
+        else:
             return jsonify({'error': INSUFFICIENT_PERMISSIONS_ERROR}), 403
-        
-        query = """
-            SELECT id, patient_id, doctor_id, document_type, title, description,
-                   file_path, file_name, file_size, document_date,
-                   created_at, updated_at
-            FROM medical_documents
-            WHERE patient_id = %s
-            ORDER BY created_at DESC
-        """
         
         documents = execute_query(query, (patient_id,), fetch_all=True)
         
@@ -243,6 +262,11 @@ def upload_document(patient_id):
         if not files or all(f.filename == '' for f in files):
             return jsonify({'error': 'No files selected'}), 400
 
+        patient_visible = _parse_patient_visible(
+            request.form.get('patient_visible'),
+            default=False,
+        )
+
         uploaded = []
         errors = []
 
@@ -263,20 +287,18 @@ def upload_document(patient_id):
             doc_type = DOCUMENT_TYPE_MAP.get(file_ext, 'other')
 
             # Insert into database
-            insert_query = """
+            insert_query = f"""
                 INSERT INTO medical_documents
                 (patient_id, doctor_id, document_type, title, file_path, file_name, 
-                 file_size, document_date)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_DATE)
-                RETURNING id, patient_id, doctor_id, document_type, title, description,
-                          file_path, file_name, file_size, document_date,
-                          created_at, updated_at
+                 file_size, document_date, patient_visible)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_DATE, %s)
+                RETURNING {DOCUMENT_COLUMNS}
             """
             
             doc = execute_query(
                 insert_query,
                 (patient_id, doctor_id, doc_type, original_name, stored_path,
-                 original_name, file_size),
+                 original_name, file_size, patient_visible),
                 fetch_one=True
             )
 
@@ -314,13 +336,11 @@ def rename_document(doc_id):
             return jsonify({'error': 'Title is required'}), 400
         
         # Update document title
-        update_query = """
+        update_query = f"""
             UPDATE medical_documents
             SET title = %s, updated_at = CURRENT_TIMESTAMP
             WHERE id = %s
-            RETURNING id, patient_id, doctor_id, document_type, title, description,
-                      file_path, file_name, file_size, document_date,
-                      created_at, updated_at
+            RETURNING {DOCUMENT_COLUMNS}
         """
         
         doc = execute_query(update_query, (new_title, doc_id), fetch_one=True)
@@ -336,6 +356,46 @@ def rename_document(doc_id):
     except Exception:
         current_app.logger.exception('Document rename error')
         return jsonify({'error': FAILED_RENAME_DOCUMENT_ERROR}), 500
+
+
+@documents_bp.route('/<doc_id>/visibility', methods=['PUT'])
+@authenticate
+def update_document_visibility(doc_id):
+    """
+    PUT /api/documents/<doc_id>/visibility
+    Toggle whether a document is visible to the patient
+    """
+    try:
+        user = request.user
+
+        if user.get('role') != 'doctor':
+            return jsonify({'error': INSUFFICIENT_PERMISSIONS_ERROR}), 403
+
+        data = request.get_json(silent=True) or {}
+        if 'patient_visible' not in data:
+            return jsonify({'error': 'patient_visible is required'}), 400
+
+        patient_visible = _parse_patient_visible(data.get('patient_visible'), default=False)
+
+        update_query = f"""
+            UPDATE medical_documents
+            SET patient_visible = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            RETURNING {DOCUMENT_COLUMNS}
+        """
+        doc = execute_query(update_query, (patient_visible, doc_id), fetch_one=True)
+
+        if not doc:
+            return jsonify({'error': DOCUMENT_NOT_FOUND_ERROR}), 404
+
+        return jsonify({
+            'message': 'Document visibility updated',
+            'document': serialize_document(doc),
+        }), 200
+
+    except Exception:
+        current_app.logger.exception('Document visibility update error')
+        return jsonify({'error': FAILED_UPDATE_VISIBILITY_ERROR}), 500
 
 
 @documents_bp.route('/<doc_id>', methods=['DELETE'])
@@ -385,17 +445,25 @@ def download_document(doc_id):
         user = request.user
         
         # Get document
-        query = "SELECT id, file_path, file_name, title, patient_id FROM medical_documents WHERE id = %s"
+        query = """
+            SELECT id, file_path, file_name, title, patient_id, patient_visible
+            FROM medical_documents
+            WHERE id = %s
+        """
         doc = execute_query(query, (doc_id,), fetch_one=True)
         
         if not doc:
             return jsonify({'error': DOCUMENT_NOT_FOUND_ERROR}), 404
         
-        # Patient can only download their own documents
+        # Patient can only download their own patient-visible documents
         if user.get('role') == 'patient':
             patient_query = "SELECT id FROM patients WHERE user_id = %s"
             patient = execute_query(patient_query, (user['id'],), fetch_one=True)
-            if not patient or patient['id'] != doc['patient_id']:
+            if (
+                not patient
+                or patient['id'] != doc['patient_id']
+                or not doc.get('patient_visible')
+            ):
                 return jsonify({'error': INSUFFICIENT_PERMISSIONS_ERROR}), 403
         elif user.get('role') != 'doctor':
             return jsonify({'error': INSUFFICIENT_PERMISSIONS_ERROR}), 403
