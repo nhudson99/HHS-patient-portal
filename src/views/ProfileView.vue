@@ -115,6 +115,7 @@ const route = useRoute()
 const router = useRouter()
 const currentUser = ref<StoredUser | null>(null)
 const profilePhotoUrl = ref<string | null>(null)
+const patientName = ref<{ first_name?: string; last_name?: string } | null>(null)
 
 function loadCurrentUser() {
   const storedUser = localStorage.getItem('currentUser')
@@ -150,6 +151,9 @@ async function loadPatientProfilePhoto() {
     })
     if (!meRes.ok) return
     const { patient } = await meRes.json()
+    patientName.value = patient
+      ? { first_name: patient.first_name, last_name: patient.last_name }
+      : null
     if (!patient?.has_profile_photo || !patient?.id) return
 
     const photoRes = await fetch(`/api/patients/${patient.id}/profile-photo`, {
@@ -173,6 +177,10 @@ onUnmounted(() => {
 })
 
 const initials = computed(() => {
+  const first = (patientName.value?.first_name || '').charAt(0)
+  const last = (patientName.value?.last_name || '').charAt(0)
+  const fromName = `${first}${last}`.toUpperCase()
+  if (fromName) return fromName
   const name = currentUser.value?.username || ''
   return name.slice(0, 2).toUpperCase() || '?'
 })

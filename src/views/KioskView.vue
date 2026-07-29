@@ -93,7 +93,7 @@
         </button>
       </div>
       <div v-else class="photo-actions">
-        <button type="button" class="kiosk-btn primary" :disabled="uploading" @click="usePhoto">
+        <button type="button" class="kiosk-btn primary" :disabled="uploading || !capturedBlob" @click="usePhoto">
           {{ uploading ? 'Saving…' : 'Use Photo' }}
         </button>
         <button type="button" class="kiosk-btn secondary" :disabled="uploading" @click="retakePhoto">
@@ -274,10 +274,10 @@ async function startFrontCamera(): Promise<boolean> {
     return false
   }
 
+  // Front-facing only — do not fall back to any/rear camera on dual-camera tablets
   const attempts: MediaStreamConstraints[] = [
     { video: { facingMode: { exact: 'user' } }, audio: false },
     { video: { facingMode: 'user' }, audio: false },
-    { video: true, audio: false },
   ]
 
   for (const constraints of attempts) {
@@ -292,7 +292,7 @@ async function startFrontCamera(): Promise<boolean> {
       cameraReady.value = true
       return true
     } catch {
-      // try next constraint
+      // try next front-facing constraint
     }
   }
   return false
@@ -343,7 +343,7 @@ async function handleLookup() {
   }
 }
 
-function takePhoto() {
+async function takePhoto() {
   const video = videoEl.value
   const canvas = canvasEl.value
   if (!video || !canvas || !cameraReady.value) return
@@ -358,14 +358,26 @@ function takePhoto() {
   // Draw un-mirrored frame (preview is CSS-mirrored only)
   ctx.drawImage(video, 0, 0, width, height)
 
-  capturedDataUrl.value = canvas.toDataURL('image/jpeg', 0.92)
-  canvas.toBlob(
-    (blob) => {
-      capturedBlob.value = blob
-    },
-    'image/jpeg',
-    0.92,
-  )
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.92)
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob((result) => resolve(result), 'image/jpeg', 0.92)
+  })
+
+  if (!blob) {
+    // Fallback: derive blob from data URL so Use Photo is never enabled without bytes
+    try {
+      const res = await fetch(dataUrl)
+      capturedBlob.value = await res.blob()
+      capturedDataUrl.value = dataUrl
+    } catch (e) {
+      console.error('Failed to capture photo blob:', e)
+      clearCapture()
+      return
+    }
+  } else {
+    capturedBlob.value = blob
+    capturedDataUrl.value = dataUrl
+  }
   resetInactivityTimer()
 }
 

@@ -5,12 +5,16 @@ Provides patient record access for providers; allows providers to create patient
 
 from flask import Blueprint, request, jsonify, current_app, send_file
 from datetime import date, datetime
+from io import BytesIO
+import os
+from werkzeug.datastructures import FileStorage
 from api.db.connection import execute_query
 from api.middleware.auth import authenticate
 import secrets
 import string
 import bcrypt
 from api.db.connection import DatabaseTransaction
+from api.utils.audit_log import log_data_access, log_audit_event, get_client_ip
 from api.routes.documents import (
     _save_file_to_storage,
     _download_file_from_storage,
@@ -23,6 +27,8 @@ INSUFFICIENT_PERMISSIONS_ERROR = 'Insufficient permissions'
 PATIENT_NOT_FOUND_ERROR = 'Patient not found'
 PROFILE_PHOTO_NOT_FOUND_ERROR = 'Profile photo not found'
 PROFILE_PHOTO_TYPE = 'profile_photo'
+MAX_KIOSK_PHOTO_BYTES = 2 * 1024 * 1024  # webcam JPEGs are typically well under 2MB
+JPEG_MAGIC = b'\xff\xd8\xff'
 
 PATIENT_SELECT_COLUMNS = """
     p.id, p.user_id, p.first_name, p.last_name, p.date_of_birth,
@@ -90,6 +96,36 @@ def _patient_accessible_by_user(patient_id: str, user: dict) -> bool:
         fetch_one=True,
     )
     return bool(patient)
+
+
+def _validate_kiosk_jpeg(file) -> FileStorage:
+    """
+    Read the upload, enforce a tight size cap, and require JPEG magic bytes.
+    Returns a fresh FileStorage ready for document storage helpers.
+    """
+    stream = file.stream
+    stream.seek(0, os.SEEK_END)
+    size = stream.tell()
+    stream.seek(0)
+
+    if size <= 0:
+        raise ValueError('Photo file is empty')
+    if size > MAX_KIOSK_PHOTO_BYTES:
+        raise ValueError('Photo exceeds the 2MB kiosk upload limit')
+
+    payload = stream.read()
+    if not payload.startswith(JPEG_MAGIC):
+        raise ValueError('Photo must be a JPEG image')
+
+    content_type = (file.content_type or '').lower()
+    if content_type and content_type not in ('image/jpeg', 'image/jpg', 'application/octet-stream'):
+        raise ValueError('Photo must be a JPEG image')
+
+    return FileStorage(
+        stream=BytesIO(payload),
+        filename='profile-photo.jpg',
+        content_type='image/jpeg',
+    )
 
 
 @patients_bp.route('/doctors', methods=['GET'])
@@ -253,6 +289,7 @@ def upload_profile_photo_kiosk(patient_id):
     No auth — gated by patient_name + date_of_birth matching the patient.
     Accepts multipart JPEG from the kiosk camera step.
     """
+    stored_path = None
     try:
         patient_name = (request.form.get('patient_name') or '').strip()
         dob = (request.form.get('date_of_birth') or '').strip()
@@ -267,8 +304,13 @@ def upload_profile_photo_kiosk(patient_id):
         if not file or not file.filename:
             return jsonify({'error': 'Photo file is required'}), 400
 
+        try:
+            jpeg_file = _validate_kiosk_jpeg(file)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
         original_name = 'profile-photo.jpg'
-        stored_path, file_size = _save_file_to_storage(file, original_name)
+        stored_path, file_size = _save_file_to_storage(jpeg_file, original_name)
 
         old_doc_id = patient.get('profile_photo_document_id')
         old_file_path = None
@@ -281,45 +323,61 @@ def upload_profile_photo_kiosk(patient_id):
             if old_doc:
                 old_file_path = old_doc.get('file_path')
 
-        insert_query = f"""
-            INSERT INTO medical_documents
-            (patient_id, doctor_id, document_type, title, file_path, file_name,
-             file_size, document_date, patient_visible)
-            VALUES (%s, NULL, %s, %s, %s, %s, %s, CURRENT_DATE, TRUE)
-            RETURNING {DOCUMENT_COLUMNS}
-        """
-        new_doc = execute_query(
-            insert_query,
-            (
-                patient_id,
-                PROFILE_PHOTO_TYPE,
-                'Profile Photo',
-                stored_path,
-                original_name,
-                file_size,
-            ),
-            fetch_one=True,
-        )
-
-        execute_query(
-            """
-            UPDATE patients
-            SET profile_photo_document_id = %s, updated_at = NOW()
-            WHERE id = %s
-            """,
-            (new_doc['id'], patient_id),
-        )
-
-        if old_doc_id:
-            execute_query(
-                "DELETE FROM medical_documents WHERE id = %s",
-                (old_doc_id,),
+        with DatabaseTransaction() as cursor:
+            cursor.execute(
+                f"""
+                INSERT INTO medical_documents
+                (patient_id, doctor_id, document_type, title, file_path, file_name,
+                 file_size, document_date, patient_visible)
+                VALUES (%s, NULL, %s, %s, %s, %s, %s, CURRENT_DATE, TRUE)
+                RETURNING {DOCUMENT_COLUMNS}
+                """,
+                (
+                    patient_id,
+                    PROFILE_PHOTO_TYPE,
+                    'Profile Photo',
+                    stored_path,
+                    original_name,
+                    file_size,
+                ),
             )
-            if old_file_path:
-                try:
-                    _delete_file_from_storage(old_file_path)
-                except Exception:
-                    current_app.logger.exception('Failed to delete previous profile photo file')
+            new_doc = cursor.fetchone()
+
+            cursor.execute(
+                """
+                UPDATE patients
+                SET profile_photo_document_id = %s, updated_at = NOW()
+                WHERE id = %s
+                """,
+                (new_doc['id'], patient_id),
+            )
+
+            if old_doc_id:
+                cursor.execute(
+                    "DELETE FROM medical_documents WHERE id = %s",
+                    (old_doc_id,),
+                )
+
+        # Delete prior storage object only after DB commit
+        if old_file_path:
+            try:
+                _delete_file_from_storage(old_file_path)
+            except Exception:
+                current_app.logger.exception('Failed to delete previous profile photo file')
+
+        log_audit_event(
+            user_id=None,
+            action='DATA_CREATE',
+            table_name='profile_photo',
+            record_id=str(patient_id),
+            ip_address=get_client_ip(request),
+            user_agent=request.headers.get('User-Agent'),
+            details={
+                'source': 'kiosk',
+                'document_id': str(new_doc['id']),
+                'file_size': file_size,
+            },
+        )
 
         return jsonify({
             'has_profile_photo': True,
@@ -327,6 +385,11 @@ def upload_profile_photo_kiosk(patient_id):
         }), 201
 
     except Exception:
+        if stored_path:
+            try:
+                _delete_file_from_storage(stored_path)
+            except Exception:
+                current_app.logger.exception('Failed to clean up profile photo after error')
         current_app.logger.exception('Kiosk profile photo upload error')
         return jsonify({'error': 'Failed to upload profile photo'}), 500
 
@@ -362,6 +425,8 @@ def get_profile_photo(patient_id):
 
         memory_file, local_file_path = _download_file_from_storage(patient['file_path'])
         download_name = patient.get('file_name') or 'profile-photo.jpg'
+
+        log_data_access(user['id'], 'profile_photo', patient_id, 'VIEW', request)
 
         if memory_file:
             return send_file(

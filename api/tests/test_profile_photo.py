@@ -129,6 +129,23 @@ def test_profile_photo_excluded_from_document_list(client):
 
 
 @requires_db
+def test_kiosk_profile_photo_rejects_non_jpeg(client):
+    patient = _get_patient('patient1')
+    data = {
+        'patient_name': f"{patient['first_name']} {patient['last_name']}",
+        'date_of_birth': str(patient['date_of_birth']),
+        'file': (BytesIO(b'not-a-jpeg-payload'), 'profile-photo.jpg'),
+    }
+    response = client.post(
+        f"/api/patients/{patient['id']}/profile-photo/kiosk",
+        data=data,
+        content_type='multipart/form-data',
+    )
+    assert response.status_code == 400
+    assert 'JPEG' in (response.get_json() or {}).get('error', '')
+
+
+@requires_db
 def test_patient_cannot_get_other_patient_photo(client):
     patient1 = _get_patient('patient1')
     upload = _upload_kiosk_photo(client, patient1)
