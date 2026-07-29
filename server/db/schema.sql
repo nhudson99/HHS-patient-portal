@@ -108,6 +108,12 @@ CREATE TABLE IF NOT EXISTS medical_documents (
 ALTER TABLE medical_documents
     ADD COLUMN IF NOT EXISTS patient_visible BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- Profile photos are stored as medical_documents rows (document_type = 'profile_photo')
+-- and pointed to from patients; excluded from document list APIs.
+ALTER TABLE patients
+    ADD COLUMN IF NOT EXISTS profile_photo_document_id UUID
+        REFERENCES medical_documents(id) ON DELETE SET NULL;
+
 CREATE TABLE IF NOT EXISTS allergies (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,

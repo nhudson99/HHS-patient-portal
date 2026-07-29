@@ -8,6 +8,17 @@
           Review your account details and update your password any time.
         </p>
 
+        <div v-if="currentUser?.role === 'patient'" class="profile-photo-row">
+          <div class="profile-photo">
+            <img v-if="profilePhotoUrl" :src="profilePhotoUrl" alt="Profile photo" />
+            <span v-else class="profile-photo-fallback">{{ initials }}</span>
+          </div>
+          <div class="profile-photo-meta">
+            <span class="label">Profile photo</span>
+            <span class="value">{{ profilePhotoUrl ? 'Updated at check-in' : 'No photo on file' }}</span>
+          </div>
+        </div>
+
         <div class="account-grid">
           <div class="account-item">
             <span class="label">Username</span>
@@ -89,7 +100,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { authApi } from '@/api'
 
@@ -103,6 +114,7 @@ type StoredUser = {
 const route = useRoute()
 const router = useRouter()
 const currentUser = ref<StoredUser | null>(null)
+const profilePhotoUrl = ref<string | null>(null)
 
 function loadCurrentUser() {
   const storedUser = localStorage.getItem('currentUser')
@@ -118,8 +130,51 @@ function loadCurrentUser() {
   }
 }
 
-onMounted(() => {
+function clearProfilePhotoUrl() {
+  if (profilePhotoUrl.value) {
+    URL.revokeObjectURL(profilePhotoUrl.value)
+    profilePhotoUrl.value = null
+  }
+}
+
+async function loadPatientProfilePhoto() {
+  clearProfilePhotoUrl()
+  if (currentUser.value?.role !== 'patient') return
+
+  const token = localStorage.getItem('sessionToken')
+  if (!token) return
+
+  try {
+    const meRes = await fetch('/api/patients/me', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!meRes.ok) return
+    const { patient } = await meRes.json()
+    if (!patient?.has_profile_photo || !patient?.id) return
+
+    const photoRes = await fetch(`/api/patients/${patient.id}/profile-photo`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!photoRes.ok) return
+    const blob = await photoRes.blob()
+    profilePhotoUrl.value = URL.createObjectURL(blob)
+  } catch (error) {
+    console.error('Failed to load profile photo:', error)
+  }
+}
+
+onMounted(async () => {
   loadCurrentUser()
+  await loadPatientProfilePhoto()
+})
+
+onUnmounted(() => {
+  clearProfilePhotoUrl()
+})
+
+const initials = computed(() => {
+  const name = currentUser.value?.username || ''
+  return name.slice(0, 2).toUpperCase() || '?'
 })
 
 const formattedRole = computed(() => {
@@ -240,6 +295,42 @@ async function handlePasswordChange() {
   margin: 0.75rem 0 1.5rem;
   color: #475569;
   line-height: 1.5;
+}
+
+.profile-photo-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.profile-photo {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.profile-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-photo-fallback {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #475569;
+}
+
+.profile-photo-meta {
+  display: grid;
+  gap: 0.25rem;
 }
 
 .account-grid {

@@ -87,6 +87,7 @@ def kiosk_lookup():
         # Find their next upcoming appointment
         apt_query = """
             SELECT a.id,
+                   a.patient_id,
                    a.appointment_date,
                    a.reason,
                    a.status,

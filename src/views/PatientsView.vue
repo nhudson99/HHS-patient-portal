@@ -30,11 +30,23 @@
 
       <section class="patient-detail" v-if="selectedPatient">
         <div class="detail-header">
-          <div>
-            <h2>{{ selectedPatient.first_name }} {{ selectedPatient.last_name }}</h2>
-            <div class="banner-meta">
-              <span>DOB: {{ formatDate(selectedPatient.date_of_birth) }}</span>
-              <span v-if="selectedPatient.phone">Phone: {{ selectedPatient.phone }}</span>
+          <div class="detail-header-main">
+            <div class="patient-avatar">
+              <img
+                v-if="selectedPatientPhotoUrl"
+                :src="selectedPatientPhotoUrl"
+                :alt="`${selectedPatient.first_name} ${selectedPatient.last_name}`"
+              />
+              <span v-else class="patient-avatar-fallback">
+                {{ selectedPatientInitials }}
+              </span>
+            </div>
+            <div>
+              <h2>{{ selectedPatient.first_name }} {{ selectedPatient.last_name }}</h2>
+              <div class="banner-meta">
+                <span>DOB: {{ formatDate(selectedPatient.date_of_birth) }}</span>
+                <span v-if="selectedPatient.phone">Phone: {{ selectedPatient.phone }}</span>
+              </div>
             </div>
           </div>
           <span class="badge" :class="{ linked: !!selectedPatient.user_id }">
@@ -852,6 +864,43 @@ const selectedPatient = computed(() =>
   patients.value.find(p => p.id === selectedPatientId.value) || null
 )
 
+const selectedPatientPhotoUrl = ref<string | null>(null)
+
+const selectedPatientInitials = computed(() => {
+  const p = selectedPatient.value
+  if (!p) return '?'
+  const first = (p.first_name || '').charAt(0)
+  const last = (p.last_name || '').charAt(0)
+  return `${first}${last}`.toUpperCase() || '?'
+})
+
+function clearSelectedPatientPhoto() {
+  if (selectedPatientPhotoUrl.value) {
+    URL.revokeObjectURL(selectedPatientPhotoUrl.value)
+    selectedPatientPhotoUrl.value = null
+  }
+}
+
+async function loadSelectedPatientPhoto() {
+  clearSelectedPatientPhoto()
+  const patient = selectedPatient.value
+  if (!patient?.has_profile_photo) return
+
+  const token = localStorage.getItem('sessionToken')
+  if (!token) return
+
+  try {
+    const response = await fetch(`/api/patients/${patient.id}/profile-photo`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!response.ok) return
+    const blob = await response.blob()
+    selectedPatientPhotoUrl.value = URL.createObjectURL(blob)
+  } catch (error) {
+    console.error('Failed to load patient profile photo:', error)
+  }
+}
+
 function selectPatient(patient: Patient) {
   selectedPatientId.value = patient.id
 }
@@ -1238,11 +1287,13 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', handleBeforeUnload)
   clearPendingSaves()
+  clearSelectedPatientPhoto()
 })
 
 watch(selectedPatientId, () => {
   clearPendingSaves()
   activeChartTab.value = 'summary'
+  loadSelectedPatientPhoto()
   loadProperties()
   loadDocuments()
   loadChartSummary()
@@ -1915,6 +1966,37 @@ async function toggleDocumentVisibility(doc: PatientDocument) {
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1.5rem;
+}
+
+.detail-header-main {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.patient-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #e5e7eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.patient-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.patient-avatar-fallback {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #4b5563;
 }
 
 .detail-header h2 {
