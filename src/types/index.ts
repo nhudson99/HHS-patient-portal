@@ -33,6 +33,7 @@ export interface Patient {
   emergency_contact_name?: string | null
   emergency_contact_phone?: string | null
   portal_email?: string | null
+  has_profile_photo?: boolean
   created_at?: string
   updated_at?: string
 }

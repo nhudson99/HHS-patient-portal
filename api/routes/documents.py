@@ -212,7 +212,9 @@ def list_documents(patient_id):
             query = f"""
                 SELECT {DOCUMENT_COLUMNS}
                 FROM medical_documents
-                WHERE patient_id = %s AND patient_visible = TRUE
+                WHERE patient_id = %s
+                  AND patient_visible = TRUE
+                  AND document_type <> 'profile_photo'
                 ORDER BY created_at DESC
             """
         elif user.get('role') == 'doctor':
@@ -220,6 +222,7 @@ def list_documents(patient_id):
                 SELECT {DOCUMENT_COLUMNS}
                 FROM medical_documents
                 WHERE patient_id = %s
+                  AND document_type <> 'profile_photo'
                 ORDER BY created_at DESC
             """
         else:
