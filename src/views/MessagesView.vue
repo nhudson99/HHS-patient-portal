@@ -512,6 +512,12 @@ async function sendTopLevelMessage() {
     return
   }
 
+  // User may have switched conversations while the send was in flight.
+  if (selectedConversationId.value !== conversationId) {
+    await loadConversations({ quiet: true })
+    return
+  }
+
   draft.value = ''
   messages.value = [...messages.value, response.data.message]
   await loadConversations({ quiet: true })
@@ -622,6 +628,15 @@ async function sendThreadReply() {
     return
   }
 
+  // User may have switched conversation/thread while the send was in flight.
+  if (
+    selectedConversationId.value !== conversationId ||
+    activeThreadRoot.value?.id !== root.id
+  ) {
+    await loadConversations({ quiet: true })
+    return
+  }
+
   threadDraft.value = ''
   threadReplies.value = [...threadReplies.value, response.data.message]
   const parent = messages.value.find((m) => m.id === root.id)
@@ -657,6 +672,13 @@ async function loadContacts() {
   contacts.value = response.data.contacts
 }
 
+function countSelectedPatients(userIds: string[]): number {
+  const selected = new Set(userIds)
+  return contacts.value.filter(
+    (contact) => selected.has(contact.user_id) && contact.role === 'patient',
+  ).length
+}
+
 async function submitCompose() {
   composeError.value = ''
   composeSubmitting.value = true
@@ -665,6 +687,11 @@ async function submitCompose() {
   if (composeMode.value === 'channel') {
     if (!channelTitle.value.trim()) {
       composeError.value = 'Channel name is required'
+      composeSubmitting.value = false
+      return
+    }
+    if (countSelectedPatients(selectedContactIds.value) > 1) {
+      composeError.value = 'Channels may include at most one patient'
       composeSubmitting.value = false
       return
     }
@@ -713,6 +740,13 @@ function closeAddPeople() {
 async function submitAddPeople() {
   if (!selectedConversationId.value || addPeopleIds.value.length === 0) {
     addPeopleError.value = 'Select at least one person'
+    return
+  }
+  const existingPatientCount = (
+    selectedConversation.value?.participants || []
+  ).filter((participant) => participant.role === 'patient').length
+  if (existingPatientCount + countSelectedPatients(addPeopleIds.value) > 1) {
+    addPeopleError.value = 'Channels may include at most one patient'
     return
   }
   addPeopleSubmitting.value = true

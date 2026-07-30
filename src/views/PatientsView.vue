@@ -994,7 +994,10 @@ function clearPendingSaves() {
   saveStatuses.value = {}
 }
 
-function mergePropertyFromServer(property: PatientProperty) {
+function mergePropertyFromServer(
+  property: PatientProperty,
+  sentPayload?: { name: string; description: string },
+) {
   const idx = patientProperties.value.findIndex(p => p.property_id === property.property_id)
   if (idx === -1) {
     patientProperties.value = [...patientProperties.value, property]
@@ -1003,6 +1006,38 @@ function mergePropertyFromServer(property: PatientProperty) {
     next[idx] = property
     patientProperties.value = next
   }
+
+  const currentDraft = propertyDrafts.value[property.property_id]
+  const hasPendingTimer = debounceTimers.has(property.property_id)
+  const draftMovedAhead = Boolean(
+    sentPayload
+    && currentDraft
+    && (
+      currentDraft.name !== sentPayload.name
+      || currentDraft.description !== sentPayload.description
+    ),
+  )
+
+  // Keep newer local keystrokes; only refresh concurrency token from the server.
+  if (hasPendingTimer || draftMovedAhead) {
+    if (currentDraft) {
+      propertyDrafts.value = {
+        ...propertyDrafts.value,
+        [property.property_id]: {
+          ...currentDraft,
+          updated_at: property.updated_at,
+        },
+      }
+    }
+    if (draftMovedAhead && !hasPendingTimer) {
+      const prop = patientProperties.value.find(p => p.property_id === property.property_id)
+      if (prop) {
+        schedulePropertySave(prop)
+      }
+    }
+    return
+  }
+
   propertyDrafts.value = {
     ...propertyDrafts.value,
     [property.property_id]: {
@@ -1040,8 +1075,13 @@ function schedulePropertySave(prop: PatientProperty) {
   debounceTimers.set(prop.property_id, timer)
 }
 
-async function persistPropertyDraft(prop: PatientProperty, keepalive = false) {
-  if (!selectedPatientId.value) return
+async function persistPropertyDraft(
+  prop: PatientProperty,
+  keepalive = false,
+  patientIdOverride?: string | null,
+) {
+  const patientId = patientIdOverride ?? selectedPatientId.value
+  if (!patientId) return
 
   const draft = getPropertyDraft(prop)
   if (!draft.name.trim()) {
@@ -1059,7 +1099,7 @@ async function persistPropertyDraft(prop: PatientProperty, keepalive = false) {
 
   if (keepalive) {
     const token = localStorage.getItem('sessionToken')
-    fetch(`/api/patient-properties/${selectedPatientId.value}/${prop.property_id}`, {
+    fetch(`/api/patient-properties/${patientId}/${prop.property_id}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -1072,10 +1112,15 @@ async function persistPropertyDraft(prop: PatientProperty, keepalive = false) {
   }
 
   const response = await patientPropertiesApi.update(
-    selectedPatientId.value,
+    patientId,
     prop.property_id,
     payload,
   )
+
+  // Patient may have changed while the save was in flight.
+  if (selectedPatientId.value !== patientId) {
+    return
+  }
 
   if (handleApiAuthFailure(response.error)) {
     return
@@ -1094,12 +1139,16 @@ async function persistPropertyDraft(prop: PatientProperty, keepalive = false) {
     return
   }
 
-  mergePropertyFromServer(response.data.property)
+  mergePropertyFromServer(response.data.property, {
+    name: payload.name,
+    description: payload.description,
+  })
   setSaveStatus(prop.property_id, 'saved')
   propertiesError.value = ''
 }
 
-function flushPendingSaves() {
+function flushPendingSaves(patientIdOverride?: string | null) {
+  const patientId = patientIdOverride ?? selectedPatientId.value
   for (const [propertyId, timer] of debounceTimers.entries()) {
     clearTimeout(timer)
     debounceTimers.delete(propertyId)
@@ -1107,7 +1156,7 @@ function flushPendingSaves() {
       || patientProperties.value.find(p => p.property_id === propertyId)
     pendingSaveProps.delete(propertyId)
     if (prop) {
-      persistPropertyDraft(prop, true)
+      void persistPropertyDraft(prop, true, patientId)
     }
   }
 }
@@ -1286,11 +1335,16 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', handleBeforeUnload)
+  flushPendingSaves()
   clearPendingSaves()
   clearSelectedPatientPhoto()
 })
 
-watch(selectedPatientId, () => {
+watch(selectedPatientId, (newId, oldId) => {
+  // Flush debounced edits for the previous patient before wiping local drafts.
+  if (oldId) {
+    flushPendingSaves(oldId)
+  }
   clearPendingSaves()
   activeChartTab.value = 'summary'
   loadSelectedPatientPhoto()

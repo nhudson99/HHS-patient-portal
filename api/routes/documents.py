@@ -14,6 +14,7 @@ from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 from azure.storage.blob import BlobServiceClient
 from api.db.connection import execute_query
 from api.middleware.auth import authenticate
+from api.utils.audit_log import log_data_access, log_audit_event, get_client_ip
 
 documents_bp = Blueprint('documents', __name__, url_prefix='/api/documents')
 INSUFFICIENT_PERMISSIONS_ERROR = 'Insufficient permissions'
@@ -319,6 +320,27 @@ def upload_document(patient_id):
         return jsonify({'error': FAILED_UPLOAD_DOCUMENTS_ERROR}), 500
 
 
+def _get_mutable_document(doc_id):
+    """
+    Fetch a document that may be mutated via the generic document APIs.
+    Profile photos are managed only through the dedicated profile-photo endpoints.
+    """
+    doc = execute_query(
+        f"""
+        SELECT {DOCUMENT_COLUMNS}
+        FROM medical_documents
+        WHERE id = %s
+        """,
+        (doc_id,),
+        fetch_one=True,
+    )
+    if not doc:
+        return None, (jsonify({'error': DOCUMENT_NOT_FOUND_ERROR}), 404)
+    if doc.get('document_type') == 'profile_photo':
+        return None, (jsonify({'error': DOCUMENT_NOT_FOUND_ERROR}), 404)
+    return doc, None
+
+
 @documents_bp.route('/<doc_id>/rename', methods=['PUT'])
 @authenticate
 def rename_document(doc_id):
@@ -337,12 +359,17 @@ def rename_document(doc_id):
         
         if not new_title:
             return jsonify({'error': 'Title is required'}), 400
+
+        existing, error_response = _get_mutable_document(doc_id)
+        if error_response:
+            return error_response
         
         # Update document title
         update_query = f"""
             UPDATE medical_documents
             SET title = %s, updated_at = CURRENT_TIMESTAMP
             WHERE id = %s
+              AND document_type IS DISTINCT FROM 'profile_photo'
             RETURNING {DOCUMENT_COLUMNS}
         """
         
@@ -350,6 +377,8 @@ def rename_document(doc_id):
         
         if not doc:
             return jsonify({'error': DOCUMENT_NOT_FOUND_ERROR}), 404
+
+        log_data_access(user['id'], 'medical_documents', doc_id, 'UPDATE', request)
         
         return jsonify({
             'message': 'Document renamed successfully',
@@ -380,16 +409,37 @@ def update_document_visibility(doc_id):
 
         patient_visible = _parse_patient_visible(data.get('patient_visible'), default=False)
 
+        existing, error_response = _get_mutable_document(doc_id)
+        if error_response:
+            return error_response
+
+        previous_visible = bool(existing.get('patient_visible'))
+
         update_query = f"""
             UPDATE medical_documents
             SET patient_visible = %s, updated_at = CURRENT_TIMESTAMP
             WHERE id = %s
+              AND document_type IS DISTINCT FROM 'profile_photo'
             RETURNING {DOCUMENT_COLUMNS}
         """
         doc = execute_query(update_query, (patient_visible, doc_id), fetch_one=True)
 
         if not doc:
             return jsonify({'error': DOCUMENT_NOT_FOUND_ERROR}), 404
+
+        log_audit_event(
+            user_id=user['id'],
+            action='DATA_UPDATE',
+            table_name='medical_documents',
+            record_id=doc_id,
+            ip_address=get_client_ip(request),
+            user_agent=request.headers.get('User-Agent'),
+            details={
+                'field': 'patient_visible',
+                'old_patient_visible': previous_visible,
+                'new_patient_visible': bool(doc.get('patient_visible')),
+            },
+        )
 
         return jsonify({
             'message': 'Document visibility updated',
@@ -414,21 +464,24 @@ def delete_document(doc_id):
         if user.get('role') != 'doctor':
             return jsonify({'error': INSUFFICIENT_PERMISSIONS_ERROR}), 403
         
-        # Get document to find file path
-        get_query = "SELECT file_path FROM medical_documents WHERE id = %s"
-        doc = execute_query(get_query, (doc_id,), fetch_one=True)
-        
-        if not doc:
-            return jsonify({'error': DOCUMENT_NOT_FOUND_ERROR}), 404
+        existing, error_response = _get_mutable_document(doc_id)
+        if error_response:
+            return error_response
         
         # Delete from database
-        delete_query = "DELETE FROM medical_documents WHERE id = %s RETURNING id"
+        delete_query = """
+            DELETE FROM medical_documents
+            WHERE id = %s
+              AND document_type IS DISTINCT FROM 'profile_photo'
+            RETURNING id, file_path
+        """
         result = execute_query(delete_query, (doc_id,), fetch_one=True)
         
         if not result:
             return jsonify({'error': FAILED_DELETE_DOCUMENT_ERROR}), 500
 
-        _delete_file_from_storage(doc.get('file_path') or '')
+        _delete_file_from_storage(result.get('file_path') or existing.get('file_path') or '')
+        log_data_access(user['id'], 'medical_documents', doc_id, 'DELETE', request)
 
         return jsonify({'message': 'Document deleted successfully'}), 200
 
