@@ -885,16 +885,19 @@ async function loadSelectedPatientPhoto() {
   clearSelectedPatientPhoto()
   const patient = selectedPatient.value
   if (!patient?.has_profile_photo) return
+  const patientId = patient.id
 
   const token = localStorage.getItem('sessionToken')
   if (!token) return
 
   try {
-    const response = await fetch(`/api/patients/${patient.id}/profile-photo`, {
+    const response = await fetch(`/api/patients/${patientId}/profile-photo`, {
       headers: { Authorization: `Bearer ${token}` },
     })
+    if (selectedPatientId.value !== patientId) return
     if (!response.ok) return
     const blob = await response.blob()
+    if (selectedPatientId.value !== patientId) return
     selectedPatientPhotoUrl.value = URL.createObjectURL(blob)
   } catch (error) {
     console.error('Failed to load patient profile photo:', error)
@@ -1223,7 +1226,8 @@ async function loadPatients() {
 }
 
 async function loadProperties() {
-  if (!selectedPatientId.value) {
+  const patientId = selectedPatientId.value
+  if (!patientId) {
     patientProperties.value = []
     return
   }
@@ -1232,7 +1236,8 @@ async function loadProperties() {
   propertiesLoading.value = true
   propertiesError.value = ''
   try {
-    const response = await patientPropertiesApi.list(selectedPatientId.value)
+    const response = await patientPropertiesApi.list(patientId)
+    if (selectedPatientId.value !== patientId) return
 
     if (handleApiAuthFailure(response.error)) {
       return
@@ -1247,9 +1252,13 @@ async function loadProperties() {
     expandedProperties.value = new Set()
   } catch (err) {
     console.error('Failed to load properties:', err)
-    propertiesError.value = 'Failed to load properties'
+    if (selectedPatientId.value === patientId) {
+      propertiesError.value = 'Failed to load properties'
+    }
   } finally {
-    propertiesLoading.value = false
+    if (selectedPatientId.value === patientId) {
+      propertiesLoading.value = false
+    }
   }
 }
 
@@ -1367,7 +1376,8 @@ watch(activeChartTab, (tab) => {
 
 // Document functions
 async function loadDocuments() {
-  if (!selectedPatientId.value) {
+  const patientId = selectedPatientId.value
+  if (!patientId) {
     documents.value = []
     return
   }
@@ -1375,11 +1385,12 @@ async function loadDocuments() {
   documentsLoading.value = true
   documentsError.value = ''
   try {
-    const response = await fetch(`/api/documents/${selectedPatientId.value}`, {
+    const response = await fetch(`/api/documents/${patientId}`, {
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
       }
     })
+    if (selectedPatientId.value !== patientId) return
 
     if (await handleAuthFailure(response)) {
       return
@@ -1391,12 +1402,17 @@ async function loadDocuments() {
     }
 
     const data = await response.json()
+    if (selectedPatientId.value !== patientId) return
     documents.value = data.documents || []
   } catch (err) {
     console.error('Failed to load documents:', err)
-    documentsError.value = 'Failed to load documents'
+    if (selectedPatientId.value === patientId) {
+      documentsError.value = 'Failed to load documents'
+    }
   } finally {
-    documentsLoading.value = false
+    if (selectedPatientId.value === patientId) {
+      documentsLoading.value = false
+    }
   }
 }
 
@@ -1581,14 +1597,16 @@ function formatFileSize(bytes: number): string {
 }
 
 async function loadChartSummary() {
-  if (!selectedPatientId.value) {
+  const patientId = selectedPatientId.value
+  if (!patientId) {
     chartSummary.value = null
     return
   }
   summaryLoading.value = true
   summaryError.value = ''
   try {
-    const result = await chartApi.getSummary(selectedPatientId.value)
+    const result = await chartApi.getSummary(patientId)
+    if (selectedPatientId.value !== patientId) return
     if (result.error) {
       summaryError.value = result.error
       return
@@ -1596,21 +1614,27 @@ async function loadChartSummary() {
     chartSummary.value = result.data?.summary || null
   } catch (err) {
     console.error('Failed to load chart summary:', err)
-    summaryError.value = 'Failed to load chart summary'
+    if (selectedPatientId.value === patientId) {
+      summaryError.value = 'Failed to load chart summary'
+    }
   } finally {
-    summaryLoading.value = false
+    if (selectedPatientId.value === patientId) {
+      summaryLoading.value = false
+    }
   }
 }
 
 async function loadAllergies() {
-  if (!selectedPatientId.value) {
+  const patientId = selectedPatientId.value
+  if (!patientId) {
     allergies.value = []
     return
   }
   allergiesLoading.value = true
   allergiesError.value = ''
   try {
-    const result = await chartApi.listAllergies(selectedPatientId.value)
+    const result = await chartApi.listAllergies(patientId)
+    if (selectedPatientId.value !== patientId) return
     if (result.error) {
       allergiesError.value = result.error
       return
@@ -1618,9 +1642,13 @@ async function loadAllergies() {
     allergies.value = result.data?.allergies || []
   } catch (err) {
     console.error('Failed to load allergies:', err)
-    allergiesError.value = 'Failed to load allergies'
+    if (selectedPatientId.value === patientId) {
+      allergiesError.value = 'Failed to load allergies'
+    }
   } finally {
-    allergiesLoading.value = false
+    if (selectedPatientId.value === patientId) {
+      allergiesLoading.value = false
+    }
   }
 }
 
@@ -1701,14 +1729,16 @@ async function deleteAllergy() {
 }
 
 async function loadMedications() {
-  if (!selectedPatientId.value) {
+  const patientId = selectedPatientId.value
+  if (!patientId) {
     medications.value = []
     return
   }
   medicationsLoading.value = true
   medicationsError.value = ''
   try {
-    const result = await chartApi.listMedications(selectedPatientId.value)
+    const result = await chartApi.listMedications(patientId)
+    if (selectedPatientId.value !== patientId) return
     if (result.error) {
       medicationsError.value = result.error
       return
@@ -1716,9 +1746,13 @@ async function loadMedications() {
     medications.value = result.data?.medications || []
   } catch (err) {
     console.error('Failed to load medications:', err)
-    medicationsError.value = 'Failed to load medications'
+    if (selectedPatientId.value === patientId) {
+      medicationsError.value = 'Failed to load medications'
+    }
   } finally {
-    medicationsLoading.value = false
+    if (selectedPatientId.value === patientId) {
+      medicationsLoading.value = false
+    }
   }
 }
 
@@ -1808,14 +1842,16 @@ async function deleteMedication() {
 }
 
 async function loadProblems() {
-  if (!selectedPatientId.value) {
+  const patientId = selectedPatientId.value
+  if (!patientId) {
     problems.value = []
     return
   }
   problemsLoading.value = true
   problemsError.value = ''
   try {
-    const result = await chartApi.listProblems(selectedPatientId.value)
+    const result = await chartApi.listProblems(patientId)
+    if (selectedPatientId.value !== patientId) return
     if (result.error) {
       problemsError.value = result.error
       return
@@ -1823,9 +1859,13 @@ async function loadProblems() {
     problems.value = result.data?.problems || []
   } catch (err) {
     console.error('Failed to load problems:', err)
-    problemsError.value = 'Failed to load problems'
+    if (selectedPatientId.value === patientId) {
+      problemsError.value = 'Failed to load problems'
+    }
   } finally {
-    problemsLoading.value = false
+    if (selectedPatientId.value === patientId) {
+      problemsLoading.value = false
+    }
   }
 }
 
