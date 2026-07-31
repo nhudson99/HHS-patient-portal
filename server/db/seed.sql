@@ -201,6 +201,22 @@ WHERE NOT EXISTS (
       AND existing.reason = a.reason
 );
 
+-- Keep at least one upcoming appointment available for kiosk check-in / camera testing.
+INSERT INTO appointments (patient_id, doctor_id, appointment_date, reason, notes, status)
+SELECT p.id, d.id, NOW() + INTERVAL '1 day', 'Kiosk check-in photo test', 'Seeded relative upcoming visit', 'confirmed'
+FROM users pu
+JOIN patients p ON p.user_id = pu.id
+JOIN users du ON du.username = 'doctor1'
+JOIN doctors d ON d.user_id = du.id
+WHERE pu.username = 'patient1'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM appointments existing
+    WHERE existing.patient_id = p.id
+      AND existing.reason = 'Kiosk check-in photo test'
+      AND existing.appointment_date::date = (CURRENT_DATE + INTERVAL '1 day')::date
+  );
+
 -- Calendar events across multiple providers and event types.
 INSERT INTO events (
     doctor_id, patient_id, event_type, title, description, event_date,

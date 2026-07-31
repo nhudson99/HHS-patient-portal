@@ -18,7 +18,7 @@
       <h2>Patient Check-In</h2>
       <p class="kiosk-instruction">Please enter your full name and date of birth</p>
 
-      <form @submit.prevent="handleLookup" class="kiosk-form">
+      <form @submit.prevent="handleCheckIn" class="kiosk-form">
         <div class="form-group">
           <label for="fullName">Full Name</label>
           <input
@@ -61,46 +61,57 @@
 
     <!-- ── Profile photo capture ── -->
     <div v-else-if="screen === 'photo'" class="kiosk-card photo-card">
-      <h2>Update Profile Photo</h2>
+      <h2>Profile Photo</h2>
       <p class="kiosk-instruction">
-        Look at the camera and take a photo for your patient profile. You can skip this step.
+        Center your face in the preview, then capture a photo to finish check-in. You can skip if the camera is unavailable.
       </p>
 
       <div class="camera-frame">
+        <!-- Keep <video> laid out (not display:none) while starting — hidden videos
+             often never decode frames on tablet browsers, which blanks the preview. -->
         <video
-          v-show="!capturedDataUrl"
           ref="videoEl"
           class="camera-preview mirror"
           autoplay
-          playsinline
           muted
+          playsinline
+          webkit-playsinline
         ></video>
-        <img
-          v-if="capturedDataUrl"
-          :src="capturedDataUrl"
-          alt="Captured profile photo"
-          class="camera-preview"
-        />
+        <div
+          v-if="!cameraReady"
+          class="camera-placeholder"
+          :class="{ error: !!cameraError }"
+        >
+          <template v-if="cameraError">{{ cameraError }}</template>
+          <template v-else>{{ startingCamera ? 'Opening camera…' : 'Starting camera…' }}</template>
+        </div>
+        <div v-if="cameraReady" class="camera-guide" aria-hidden="true">
+          <span class="camera-guide-ring"></span>
+        </div>
         <canvas ref="canvasEl" class="capture-canvas"></canvas>
       </div>
 
-      <div v-if="!capturedDataUrl" class="photo-actions">
-        <button type="button" class="kiosk-btn primary" :disabled="!cameraReady || uploading" @click="takePhoto">
-          Take Photo
+      <div class="photo-actions">
+        <button
+          v-if="cameraReady"
+          type="button"
+          class="kiosk-btn primary"
+          :disabled="uploading"
+          @click="captureAndCheckIn"
+        >
+          {{ uploading ? 'Checking In…' : 'Capture & Check In' }}
         </button>
-        <button type="button" class="kiosk-btn secondary" :disabled="uploading" @click="skipPhoto">
-          Skip
+        <button
+          v-else
+          type="button"
+          class="kiosk-btn primary"
+          :disabled="uploading || startingCamera"
+          @click="retryCamera"
+        >
+          {{ startingCamera ? 'Starting…' : 'Enable Camera' }}
         </button>
-      </div>
-      <div v-else class="photo-actions">
-        <button type="button" class="kiosk-btn primary" :disabled="uploading || !capturedBlob" @click="usePhoto">
-          {{ uploading ? 'Saving…' : 'Use Photo' }}
-        </button>
-        <button type="button" class="kiosk-btn secondary" :disabled="uploading" @click="retakePhoto">
-          Retake
-        </button>
-        <button type="button" class="kiosk-btn secondary" :disabled="uploading" @click="skipPhoto">
-          Skip
+        <button type="button" class="kiosk-btn secondary" :disabled="uploading" @click="skipAndCheckIn">
+          {{ uploading ? 'Checking In…' : 'Skip Photo & Check In' }}
         </button>
       </div>
     </div>
@@ -151,6 +162,13 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
+import {
+  acquireFrontCameraStream,
+  classifyGetUserMediaError,
+  FrontCameraError,
+  frontCameraErrorMessage,
+  isSecureCameraContext,
+} from '@/utils/frontCamera'
 
 // ── State ─────────────────────────────────────────────────────────────────────
 type Screen = 'welcome' | 'form' | 'photo' | 'success'
@@ -158,9 +176,11 @@ type Screen = 'welcome' | 'form' | 'photo' | 'success'
 const screen = ref<Screen>('welcome')
 const loading = ref(false)
 const uploading = ref(false)
+const startingCamera = ref(false)
 const appointmentInfo = ref<any>(null)
 const checkedInName = ref('')
 const cameraReady = ref(false)
+const cameraError = ref('')
 const capturedDataUrl = ref<string | null>(null)
 const capturedBlob = ref<Blob | null>(null)
 
@@ -169,6 +189,10 @@ const form = ref({ fullName: '', dob: '', appointmentTime: '' })
 const videoEl = ref<HTMLVideoElement | null>(null)
 const canvasEl = ref<HTMLCanvasElement | null>(null)
 let mediaStream: MediaStream | null = null
+/** In-flight front-camera request started during the Check In user gesture. */
+let pendingFrontStreamPromise: Promise<MediaStream | null> | null = null
+/** Appointment lookup started when entering the photo step (runs in parallel with camera). */
+let pendingLookupPromise: Promise<any | null> | null = null
 
 // ── Countdown (success screen only) ──────────────────────────────────────────
 const RESET_AFTER_SECS = 10
@@ -208,7 +232,17 @@ function clearInactivityTimer() {
   inactivityTimer = null
 }
 
+function stopPendingFrontStream() {
+  const pending = pendingFrontStreamPromise
+  pendingFrontStreamPromise = null
+  if (!pending) return
+  void pending.then((stream) => {
+    stream?.getTracks().forEach((track) => track.stop())
+  })
+}
+
 function stopCamera() {
+  stopPendingFrontStream()
   if (mediaStream) {
     for (const track of mediaStream.getTracks()) {
       track.stop()
@@ -232,12 +266,15 @@ function reset() {
   clearInactivityTimer()
   stopCamera()
   clearCapture()
+  pendingLookupPromise = null
   screen.value = 'welcome'
   form.value = { fullName: '', dob: '', appointmentTime: '' }
   appointmentInfo.value = null
   checkedInName.value = ''
   loading.value = false
   uploading.value = false
+  startingCamera.value = false
+  cameraError.value = ''
 }
 
 function goToSuccess(name: string, appointment: any | null) {
@@ -269,54 +306,182 @@ async function completeCheckIn(appointment: any) {
   }
 }
 
-async function startFrontCamera(): Promise<boolean> {
-  if (!navigator.mediaDevices?.getUserMedia) {
+/**
+ * Begin getUserMedia while the Check In click is still a valid user gesture.
+ * iOS / Safari kiosk browsers often reject camera access after an awaited fetch.
+ */
+function beginFrontCameraDuringUserGesture() {
+  stopPendingFrontStream()
+  if (!isSecureCameraContext(window.isSecureContext, navigator.mediaDevices)) {
+    pendingFrontStreamPromise = Promise.resolve(null)
+    return
+  }
+
+  const request = acquireFrontCameraStream(navigator.mediaDevices, {
+    isSecureContext: window.isSecureContext,
+  })
+    .then((stream) => stream)
+    .catch(() => null)
+
+  pendingFrontStreamPromise = request
+}
+
+function videoHasPreviewFrame(video: HTMLVideoElement): boolean {
+  return video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0
+}
+
+async function waitForVideoFrame(video: HTMLVideoElement): Promise<boolean> {
+  if (videoHasPreviewFrame(video)) return true
+
+  return new Promise<boolean>((resolve) => {
+    let settled = false
+    const finish = (ok: boolean) => {
+      if (settled) return
+      settled = true
+      video.removeEventListener('loadeddata', onUpdate)
+      video.removeEventListener('loadedmetadata', onUpdate)
+      video.removeEventListener('playing', onUpdate)
+      resolve(ok)
+    }
+    const onUpdate = () => {
+      if (videoHasPreviewFrame(video)) finish(true)
+    }
+
+    video.addEventListener('loadeddata', onUpdate)
+    video.addEventListener('loadedmetadata', onUpdate)
+    video.addEventListener('playing', onUpdate)
+
+    const maybeRvf = video as HTMLVideoElement & {
+      requestVideoFrameCallback?: (cb: () => void) => number
+    }
+    if (typeof maybeRvf.requestVideoFrameCallback === 'function') {
+      maybeRvf.requestVideoFrameCallback(() => finish(videoHasPreviewFrame(video)))
+    }
+
+    window.setTimeout(() => finish(videoHasPreviewFrame(video)), 4000)
+  })
+}
+
+async function attachStreamToVideo(stream: MediaStream): Promise<boolean> {
+  mediaStream = stream
+  // Ensure the photo-step <video> is mounted and laid out before attaching.
+  // A display:none video often never produces frames on tablet WebViews.
+  await nextTick()
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+
+  const video = videoEl.value
+  if (!video) {
     return false
   }
 
-  // Front-facing only — do not fall back to any/rear camera on dual-camera tablets
-  const attempts: MediaStreamConstraints[] = [
-    { video: { facingMode: { exact: 'user' } }, audio: false },
-    { video: { facingMode: 'user' }, audio: false },
-  ]
+  video.muted = true
+  video.setAttribute('playsinline', 'true')
+  video.setAttribute('webkit-playsinline', 'true')
+  video.srcObject = stream
 
-  for (const constraints of attempts) {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia(constraints)
-      mediaStream = stream
-      await nextTick()
-      if (videoEl.value) {
-        videoEl.value.srcObject = stream
-        await videoEl.value.play().catch(() => undefined)
-      }
-      cameraReady.value = true
-      return true
-    } catch {
-      // try next front-facing constraint
-    }
+  // Start playback first so frames can decode, then wait for dimensions.
+  // Promise.resolve covers environments where play() returns void (jsdom).
+  await Promise.resolve(video.play()).catch(() => undefined)
+  await waitForVideoFrame(video)
+  if (!videoHasPreviewFrame(video) && video.paused) {
+    await Promise.resolve(video.play()).catch(() => undefined)
+    await waitForVideoFrame(video)
   }
-  return false
+
+  const live = stream.getVideoTracks().some((t) => t.readyState === 'live')
+  // Once the track is live and attached to a laid-out <video>, show the
+  // preview and allow capture. Waiting only on videoWidth caused blank
+  // previews on tablet WebViews that lag metadata while frames still paint.
+  cameraReady.value = live
+  if (!live) {
+    cameraError.value = frontCameraErrorMessage('unavailable')
+  }
+  return live
 }
 
-async function openPhotoStep(appointment: any) {
-  appointmentInfo.value = appointment
+async function startFrontCamera(): Promise<boolean> {
+  startingCamera.value = true
+  cameraError.value = ''
+  cameraReady.value = false
+
+  try {
+    if (!isSecureCameraContext(window.isSecureContext, navigator.mediaDevices)) {
+      cameraError.value = frontCameraErrorMessage(
+        window.isSecureContext ? 'unsupported' : 'insecure',
+      )
+      return false
+    }
+
+    // Prefer a stream already opened during the Check In user gesture
+    let stream: MediaStream | null = null
+    if (pendingFrontStreamPromise) {
+      const pending = pendingFrontStreamPromise
+      pendingFrontStreamPromise = null
+      stream = await pending
+      // If the user navigated away while waiting, drop the stream
+      if (screen.value !== 'photo') {
+        stream?.getTracks().forEach((track) => track.stop())
+        return false
+      }
+    }
+
+    if (!stream) {
+      try {
+        stream = await acquireFrontCameraStream(navigator.mediaDevices, {
+          isSecureContext: window.isSecureContext,
+        })
+      } catch (err) {
+        if (err instanceof FrontCameraError) {
+          cameraError.value = err.message
+        } else {
+          cameraError.value = frontCameraErrorMessage(classifyGetUserMediaError(err))
+        }
+        return false
+      }
+    }
+
+    // Stop any previous preview tracks before attaching the new stream
+    if (mediaStream && mediaStream !== stream) {
+      for (const track of mediaStream.getTracks()) track.stop()
+      mediaStream = null
+    }
+
+    const ok = await attachStreamToVideo(stream)
+    if (!ok) {
+      for (const track of stream.getTracks()) track.stop()
+      if (mediaStream === stream) mediaStream = null
+      if (!cameraError.value) {
+        cameraError.value = frontCameraErrorMessage('unavailable')
+      }
+    }
+    return ok
+  } finally {
+    startingCamera.value = false
+  }
+}
+
+async function openPhotoStep() {
   clearCapture()
+  appointmentInfo.value = null
+  cameraError.value = ''
+  cameraReady.value = false
   screen.value = 'photo'
   resetInactivityTimer()
+
+  // Look up the appointment in parallel while the camera preview is shown
+  pendingLookupPromise = lookupAppointment()
+
   await nextTick()
-  const ok = await startFrontCamera()
-  if (!ok) {
-    // Auto-skip when camera is unavailable
-    await completeCheckIn(appointment)
-  }
+  await startFrontCamera()
 }
 
-// ── API: look up appointment, then photo step or success ──────────────────────
-async function handleLookup() {
-  loading.value = true
+async function retryCamera() {
+  resetInactivityTimer()
+  await startFrontCamera()
+}
 
+async function lookupAppointment(): Promise<any | null> {
   const patientName = form.value.fullName.trim()
-
   try {
     const lookupRes = await fetch('/api/appointments/kiosk/lookup', {
       method: 'POST',
@@ -329,31 +494,47 @@ async function handleLookup() {
     })
 
     if (!lookupRes.ok) {
-      goToSuccess(patientName, null)
-      return
+      appointmentInfo.value = null
+      return null
     }
 
     const { appointment } = await lookupRes.json()
-    await openPhotoStep(appointment)
+    appointmentInfo.value = appointment
+    return appointment
   } catch (e) {
-    console.error('Kiosk check-in error:', e)
-    goToSuccess(patientName, null)
+    console.error('Kiosk lookup error:', e)
+    appointmentInfo.value = null
+    return null
+  }
+}
+
+/**
+ * Check In on the form → go straight to the live camera preview.
+ * Appointment lookup runs in the background; check-in APIs run after
+ * Capture or Skip.
+ */
+async function handleCheckIn() {
+  loading.value = true
+  // Start getUserMedia during this click (user gesture), then show preview.
+  beginFrontCameraDuringUserGesture()
+  try {
+    await openPhotoStep()
   } finally {
     loading.value = false
   }
 }
 
-async function takePhoto() {
+async function captureFrameBlob(): Promise<boolean> {
   const video = videoEl.value
   const canvas = canvasEl.value
-  if (!video || !canvas || !cameraReady.value) return
+  if (!video || !canvas || !cameraReady.value) return false
 
   const width = video.videoWidth || 640
   const height = video.videoHeight || 480
   canvas.width = width
   canvas.height = height
   const ctx = canvas.getContext('2d')
-  if (!ctx) return
+  if (!ctx) return false
 
   // Draw un-mirrored frame (preview is CSS-mirrored only)
   ctx.drawImage(video, 0, 0, width, height)
@@ -364,7 +545,6 @@ async function takePhoto() {
   })
 
   if (!blob) {
-    // Fallback: derive blob from data URL so Use Photo is never enabled without bytes
     try {
       const res = await fetch(dataUrl)
       capturedBlob.value = await res.blob()
@@ -372,24 +552,13 @@ async function takePhoto() {
     } catch (e) {
       console.error('Failed to capture photo blob:', e)
       clearCapture()
-      return
+      return false
     }
   } else {
     capturedBlob.value = blob
     capturedDataUrl.value = dataUrl
   }
-  resetInactivityTimer()
-}
-
-async function retakePhoto() {
-  clearCapture()
-  resetInactivityTimer()
-  if (!mediaStream) {
-    const ok = await startFrontCamera()
-    if (!ok) {
-      await skipPhoto()
-    }
-  }
+  return true
 }
 
 async function uploadCapturedPhoto(appointment: any): Promise<boolean> {
@@ -412,29 +581,48 @@ async function uploadCapturedPhoto(appointment: any): Promise<boolean> {
   }
 }
 
-async function usePhoto() {
-  if (!appointmentInfo.value) return
+async function finalizeCheckIn(withPhoto: boolean) {
   uploading.value = true
+  const patientName = form.value.fullName.trim()
   try {
-    // Upload failure must not block check-in
-    await uploadCapturedPhoto(appointmentInfo.value)
-    await completeCheckIn(appointmentInfo.value)
+    const appointment =
+      appointmentInfo.value ??
+      (pendingLookupPromise ? await pendingLookupPromise : await lookupAppointment())
+    pendingLookupPromise = null
+
+    if (withPhoto && appointment) {
+      // Upload failure must not block check-in
+      await uploadCapturedPhoto(appointment)
+    }
+
+    if (appointment) {
+      await completeCheckIn(appointment)
+    } else {
+      goToSuccess(patientName, null)
+    }
+  } catch (e) {
+    console.error('Kiosk check-in error:', e)
+    goToSuccess(patientName, null)
   } finally {
     uploading.value = false
   }
 }
 
-async function skipPhoto() {
-  if (!appointmentInfo.value) {
-    goToSuccess(form.value.fullName.trim(), null)
+async function captureAndCheckIn() {
+  resetInactivityTimer()
+  const ok = await captureFrameBlob()
+  if (!ok) {
+    cameraError.value = 'Could not capture photo. Try again or skip.'
+    cameraReady.value = Boolean(mediaStream)
     return
   }
-  uploading.value = true
-  try {
-    await completeCheckIn(appointmentInfo.value)
-  } finally {
-    uploading.value = false
-  }
+  await finalizeCheckIn(true)
+}
+
+async function skipAndCheckIn() {
+  resetInactivityTimer()
+  clearCapture()
+  await finalizeCheckIn(false)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -533,22 +721,65 @@ h2 {
 .camera-frame {
   position: relative;
   width: 100%;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 3 / 4;
+  max-height: min(58vh, 520px);
+  margin-inline: auto;
   background: #0f172a;
-  border-radius: 12px;
+  border-radius: 16px;
   overflow: hidden;
   margin-bottom: 20px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 .camera-preview {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
+  background: #0f172a;
 }
 
 .camera-preview.mirror {
   transform: scaleX(-1);
+}
+
+.camera-placeholder {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: #e2e8f0;
+  font-size: 1.05rem;
+  line-height: 1.45;
+  text-align: center;
+  background: #0f172a;
+}
+
+.camera-placeholder.error {
+  color: #fecaca;
+}
+
+.camera-guide {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.camera-guide-ring {
+  width: min(68%, 260px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.28);
 }
 
 .capture-canvas {
