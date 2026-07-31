@@ -1349,7 +1349,7 @@ onBeforeUnmount(() => {
   clearSelectedPatientPhoto()
 })
 
-watch(selectedPatientId, (newId, oldId) => {
+watch(selectedPatientId, (_newId, oldId) => {
   // Flush debounced edits for the previous patient before wiping local drafts.
   if (oldId) {
     flushPendingSaves(oldId)
