@@ -18,7 +18,7 @@
       <h2>Patient Check-In</h2>
       <p class="kiosk-instruction">Please enter your full name and date of birth</p>
 
-      <form @submit.prevent="handleLookup" class="kiosk-form">
+      <form @submit.prevent="handleCheckIn" class="kiosk-form">
         <div class="form-group">
           <label for="fullName">Full Name</label>
           <input
@@ -61,18 +61,15 @@
 
     <!-- ── Profile photo capture ── -->
     <div v-else-if="screen === 'photo'" class="kiosk-card photo-card">
-      <h2>Update Profile Photo</h2>
+      <h2>Profile Photo</h2>
       <p class="kiosk-instruction">
-        {{ capturedDataUrl
-          ? 'Review your photo, then use it to finish check-in or retake.'
-          : 'Center your face in the live preview below, then capture a photo before finishing check-in. You can skip this step.' }}
+        Center your face in the preview, then capture a photo to finish check-in. You can skip if the camera is unavailable.
       </p>
 
-      <div class="camera-frame" :class="{ 'has-capture': !!capturedDataUrl }">
+      <div class="camera-frame">
         <!-- Keep <video> laid out (not display:none) while starting — hidden videos
              often never decode frames on tablet browsers, which blanks the preview. -->
         <video
-          v-show="!capturedDataUrl"
           ref="videoEl"
           class="camera-preview mirror"
           autoplay
@@ -80,35 +77,29 @@
           playsinline
           webkit-playsinline
         ></video>
-        <img
-          v-if="capturedDataUrl"
-          :src="capturedDataUrl"
-          alt="Captured profile photo"
-          class="camera-preview"
-        />
         <div
-          v-if="!capturedDataUrl && !cameraReady"
+          v-if="!cameraReady"
           class="camera-placeholder"
           :class="{ error: !!cameraError }"
         >
           <template v-if="cameraError">{{ cameraError }}</template>
           <template v-else>{{ startingCamera ? 'Opening camera…' : 'Starting camera…' }}</template>
         </div>
-        <div v-if="!capturedDataUrl && cameraReady" class="camera-guide" aria-hidden="true">
+        <div v-if="cameraReady" class="camera-guide" aria-hidden="true">
           <span class="camera-guide-ring"></span>
         </div>
         <canvas ref="canvasEl" class="capture-canvas"></canvas>
       </div>
 
-      <div v-if="!capturedDataUrl" class="photo-actions">
+      <div class="photo-actions">
         <button
           v-if="cameraReady"
           type="button"
           class="kiosk-btn primary"
           :disabled="uploading"
-          @click="takePhoto"
+          @click="captureAndCheckIn"
         >
-          Capture Photo
+          {{ uploading ? 'Checking In…' : 'Capture & Check In' }}
         </button>
         <button
           v-else
@@ -119,19 +110,8 @@
         >
           {{ startingCamera ? 'Starting…' : 'Enable Camera' }}
         </button>
-        <button type="button" class="kiosk-btn secondary" :disabled="uploading" @click="skipPhoto">
-          Skip Photo
-        </button>
-      </div>
-      <div v-else class="photo-actions">
-        <button type="button" class="kiosk-btn primary" :disabled="uploading || !capturedBlob" @click="usePhoto">
-          {{ uploading ? 'Saving…' : 'Use Photo & Check In' }}
-        </button>
-        <button type="button" class="kiosk-btn secondary" :disabled="uploading" @click="retakePhoto">
-          Retake
-        </button>
-        <button type="button" class="kiosk-btn secondary" :disabled="uploading" @click="skipPhoto">
-          Skip Photo
+        <button type="button" class="kiosk-btn secondary" :disabled="uploading" @click="skipAndCheckIn">
+          {{ uploading ? 'Checking In…' : 'Skip Photo & Check In' }}
         </button>
       </div>
     </div>
@@ -211,6 +191,8 @@ const canvasEl = ref<HTMLCanvasElement | null>(null)
 let mediaStream: MediaStream | null = null
 /** In-flight front-camera request started during the Check In user gesture. */
 let pendingFrontStreamPromise: Promise<MediaStream | null> | null = null
+/** Appointment lookup started when entering the photo step (runs in parallel with camera). */
+let pendingLookupPromise: Promise<any | null> | null = null
 
 // ── Countdown (success screen only) ──────────────────────────────────────────
 const RESET_AFTER_SECS = 10
@@ -284,6 +266,7 @@ function reset() {
   clearInactivityTimer()
   stopCamera()
   clearCapture()
+  pendingLookupPromise = null
   screen.value = 'welcome'
   form.value = { fullName: '', dob: '', appointmentTime: '' }
   appointmentInfo.value = null
@@ -477,14 +460,18 @@ async function startFrontCamera(): Promise<boolean> {
   }
 }
 
-async function openPhotoStep(appointment: any) {
-  appointmentInfo.value = appointment
+async function openPhotoStep() {
   clearCapture()
+  appointmentInfo.value = null
+  cameraError.value = ''
+  cameraReady.value = false
   screen.value = 'photo'
   resetInactivityTimer()
+
+  // Look up the appointment in parallel while the camera preview is shown
+  pendingLookupPromise = lookupAppointment()
+
   await nextTick()
-  // Stay on the photo step even when the camera fails so the patient can
-  // tap Enable Camera (restores user gesture) or Skip — do not auto-check-in.
   await startFrontCamera()
 }
 
@@ -493,16 +480,8 @@ async function retryCamera() {
   await startFrontCamera()
 }
 
-// ── API: look up appointment, then photo step or success ──────────────────────
-async function handleLookup() {
-  loading.value = true
-
+async function lookupAppointment(): Promise<any | null> {
   const patientName = form.value.fullName.trim()
-
-  // Kick off the front camera during this click before any await loses
-  // transient user activation (critical on iPad / Safari kiosk browsers).
-  beginFrontCameraDuringUserGesture()
-
   try {
     const lookupRes = await fetch('/api/appointments/kiosk/lookup', {
       method: 'POST',
@@ -515,33 +494,47 @@ async function handleLookup() {
     })
 
     if (!lookupRes.ok) {
-      stopPendingFrontStream()
-      goToSuccess(patientName, null)
-      return
+      appointmentInfo.value = null
+      return null
     }
 
     const { appointment } = await lookupRes.json()
-    await openPhotoStep(appointment)
+    appointmentInfo.value = appointment
+    return appointment
   } catch (e) {
-    console.error('Kiosk check-in error:', e)
-    stopPendingFrontStream()
-    goToSuccess(patientName, null)
+    console.error('Kiosk lookup error:', e)
+    appointmentInfo.value = null
+    return null
+  }
+}
+
+/**
+ * Check In on the form → go straight to the live camera preview.
+ * Appointment lookup runs in the background; check-in APIs run after
+ * Capture or Skip.
+ */
+async function handleCheckIn() {
+  loading.value = true
+  // Start getUserMedia during this click (user gesture), then show preview.
+  beginFrontCameraDuringUserGesture()
+  try {
+    await openPhotoStep()
   } finally {
     loading.value = false
   }
 }
 
-async function takePhoto() {
+async function captureFrameBlob(): Promise<boolean> {
   const video = videoEl.value
   const canvas = canvasEl.value
-  if (!video || !canvas || !cameraReady.value) return
+  if (!video || !canvas || !cameraReady.value) return false
 
   const width = video.videoWidth || 640
   const height = video.videoHeight || 480
   canvas.width = width
   canvas.height = height
   const ctx = canvas.getContext('2d')
-  if (!ctx) return
+  if (!ctx) return false
 
   // Draw un-mirrored frame (preview is CSS-mirrored only)
   ctx.drawImage(video, 0, 0, width, height)
@@ -552,7 +545,6 @@ async function takePhoto() {
   })
 
   if (!blob) {
-    // Fallback: derive blob from data URL so Use Photo is never enabled without bytes
     try {
       const res = await fetch(dataUrl)
       capturedBlob.value = await res.blob()
@@ -560,29 +552,13 @@ async function takePhoto() {
     } catch (e) {
       console.error('Failed to capture photo blob:', e)
       clearCapture()
-      return
+      return false
     }
   } else {
     capturedBlob.value = blob
     capturedDataUrl.value = dataUrl
   }
-  resetInactivityTimer()
-}
-
-async function retakePhoto() {
-  clearCapture()
-  resetInactivityTimer()
-  if (!mediaStream) {
-    await startFrontCamera()
-  } else {
-    cameraReady.value = true
-    cameraError.value = ''
-    await nextTick()
-    if (videoEl.value && mediaStream) {
-      videoEl.value.srcObject = mediaStream
-      await Promise.resolve(videoEl.value.play()).catch(() => undefined)
-    }
-  }
+  return true
 }
 
 async function uploadCapturedPhoto(appointment: any): Promise<boolean> {
@@ -605,29 +581,48 @@ async function uploadCapturedPhoto(appointment: any): Promise<boolean> {
   }
 }
 
-async function usePhoto() {
-  if (!appointmentInfo.value) return
+async function finalizeCheckIn(withPhoto: boolean) {
   uploading.value = true
+  const patientName = form.value.fullName.trim()
   try {
-    // Upload failure must not block check-in
-    await uploadCapturedPhoto(appointmentInfo.value)
-    await completeCheckIn(appointmentInfo.value)
+    const appointment =
+      appointmentInfo.value ??
+      (pendingLookupPromise ? await pendingLookupPromise : await lookupAppointment())
+    pendingLookupPromise = null
+
+    if (withPhoto && appointment) {
+      // Upload failure must not block check-in
+      await uploadCapturedPhoto(appointment)
+    }
+
+    if (appointment) {
+      await completeCheckIn(appointment)
+    } else {
+      goToSuccess(patientName, null)
+    }
+  } catch (e) {
+    console.error('Kiosk check-in error:', e)
+    goToSuccess(patientName, null)
   } finally {
     uploading.value = false
   }
 }
 
-async function skipPhoto() {
-  if (!appointmentInfo.value) {
-    goToSuccess(form.value.fullName.trim(), null)
+async function captureAndCheckIn() {
+  resetInactivityTimer()
+  const ok = await captureFrameBlob()
+  if (!ok) {
+    cameraError.value = 'Could not capture photo. Try again or skip.'
+    cameraReady.value = Boolean(mediaStream)
     return
   }
-  uploading.value = true
-  try {
-    await completeCheckIn(appointmentInfo.value)
-  } finally {
-    uploading.value = false
-  }
+  await finalizeCheckIn(true)
+}
+
+async function skipAndCheckIn() {
+  resetInactivityTimer()
+  clearCapture()
+  await finalizeCheckIn(false)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
