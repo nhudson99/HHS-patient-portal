@@ -203,7 +203,7 @@ WHERE NOT EXISTS (
 
 -- Keep at least one upcoming appointment available for kiosk check-in / camera testing.
 INSERT INTO appointments (patient_id, doctor_id, appointment_date, reason, notes, status)
-SELECT p.id, d.id, CURRENT_DATE + INTERVAL '1 day' + TIME '10:00', 'Kiosk check-in photo test', 'Seeded relative upcoming visit', 'confirmed'
+SELECT p.id, d.id, NOW() + INTERVAL '1 day', 'Kiosk check-in photo test', 'Seeded relative upcoming visit', 'confirmed'
 FROM users pu
 JOIN patients p ON p.user_id = pu.id
 JOIN users du ON du.username = 'doctor1'
