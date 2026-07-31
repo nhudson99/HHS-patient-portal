@@ -68,7 +68,7 @@
 
       <div class="camera-frame">
         <video
-          v-show="!capturedDataUrl"
+          v-show="!capturedDataUrl && cameraReady"
           ref="videoEl"
           class="camera-preview mirror"
           autoplay
@@ -81,12 +81,33 @@
           alt="Captured profile photo"
           class="camera-preview"
         />
+        <div v-if="!capturedDataUrl && !cameraReady && !cameraError" class="camera-placeholder">
+          Starting camera…
+        </div>
+        <div v-if="!capturedDataUrl && cameraError" class="camera-placeholder error">
+          {{ cameraError }}
+        </div>
         <canvas ref="canvasEl" class="capture-canvas"></canvas>
       </div>
 
       <div v-if="!capturedDataUrl" class="photo-actions">
-        <button type="button" class="kiosk-btn primary" :disabled="!cameraReady || uploading" @click="takePhoto">
+        <button
+          v-if="cameraReady"
+          type="button"
+          class="kiosk-btn primary"
+          :disabled="uploading"
+          @click="takePhoto"
+        >
           Take Photo
+        </button>
+        <button
+          v-else
+          type="button"
+          class="kiosk-btn primary"
+          :disabled="uploading || startingCamera"
+          @click="retryCamera"
+        >
+          {{ startingCamera ? 'Starting…' : 'Enable Camera' }}
         </button>
         <button type="button" class="kiosk-btn secondary" :disabled="uploading" @click="skipPhoto">
           Skip
@@ -151,6 +172,13 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
+import {
+  acquireFrontCameraStream,
+  classifyGetUserMediaError,
+  FrontCameraError,
+  frontCameraErrorMessage,
+  isSecureCameraContext,
+} from '@/utils/frontCamera'
 
 // ── State ─────────────────────────────────────────────────────────────────────
 type Screen = 'welcome' | 'form' | 'photo' | 'success'
@@ -158,9 +186,11 @@ type Screen = 'welcome' | 'form' | 'photo' | 'success'
 const screen = ref<Screen>('welcome')
 const loading = ref(false)
 const uploading = ref(false)
+const startingCamera = ref(false)
 const appointmentInfo = ref<any>(null)
 const checkedInName = ref('')
 const cameraReady = ref(false)
+const cameraError = ref('')
 const capturedDataUrl = ref<string | null>(null)
 const capturedBlob = ref<Blob | null>(null)
 
@@ -169,6 +199,8 @@ const form = ref({ fullName: '', dob: '', appointmentTime: '' })
 const videoEl = ref<HTMLVideoElement | null>(null)
 const canvasEl = ref<HTMLCanvasElement | null>(null)
 let mediaStream: MediaStream | null = null
+/** In-flight front-camera request started during the Check In user gesture. */
+let pendingFrontStreamPromise: Promise<MediaStream | null> | null = null
 
 // ── Countdown (success screen only) ──────────────────────────────────────────
 const RESET_AFTER_SECS = 10
@@ -208,7 +240,17 @@ function clearInactivityTimer() {
   inactivityTimer = null
 }
 
+function stopPendingFrontStream() {
+  const pending = pendingFrontStreamPromise
+  pendingFrontStreamPromise = null
+  if (!pending) return
+  void pending.then((stream) => {
+    stream?.getTracks().forEach((track) => track.stop())
+  })
+}
+
 function stopCamera() {
+  stopPendingFrontStream()
   if (mediaStream) {
     for (const track of mediaStream.getTracks()) {
       track.stop()
@@ -238,6 +280,8 @@ function reset() {
   checkedInName.value = ''
   loading.value = false
   uploading.value = false
+  startingCamera.value = false
+  cameraError.value = ''
 }
 
 function goToSuccess(name: string, appointment: any | null) {
@@ -269,33 +313,121 @@ async function completeCheckIn(appointment: any) {
   }
 }
 
-async function startFrontCamera(): Promise<boolean> {
-  if (!navigator.mediaDevices?.getUserMedia) {
+/**
+ * Begin getUserMedia while the Check In click is still a valid user gesture.
+ * iOS / Safari kiosk browsers often reject camera access after an awaited fetch.
+ */
+function beginFrontCameraDuringUserGesture() {
+  stopPendingFrontStream()
+  if (!isSecureCameraContext(window.isSecureContext, navigator.mediaDevices)) {
+    pendingFrontStreamPromise = Promise.resolve(null)
+    return
+  }
+
+  const request = acquireFrontCameraStream(navigator.mediaDevices, {
+    isSecureContext: window.isSecureContext,
+  })
+    .then((stream) => stream)
+    .catch(() => null)
+
+  pendingFrontStreamPromise = request
+}
+
+async function waitForVideoFrame(video: HTMLVideoElement): Promise<void> {
+  if (video.readyState >= 2 && video.videoWidth > 0) return
+
+  await new Promise<void>((resolve) => {
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
+      video.removeEventListener('loadeddata', finish)
+      resolve()
+    }
+    video.addEventListener('loadeddata', finish)
+    window.setTimeout(finish, 2000)
+  })
+}
+
+async function attachStreamToVideo(stream: MediaStream): Promise<boolean> {
+  mediaStream = stream
+  await nextTick()
+  const video = videoEl.value
+  if (!video) {
     return false
   }
 
-  // Front-facing only — do not fall back to any/rear camera on dual-camera tablets
-  const attempts: MediaStreamConstraints[] = [
-    { video: { facingMode: { exact: 'user' } }, audio: false },
-    { video: { facingMode: 'user' }, audio: false },
-  ]
+  video.srcObject = stream
+  await waitForVideoFrame(video)
+  await video.play().catch(() => undefined)
 
-  for (const constraints of attempts) {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia(constraints)
-      mediaStream = stream
-      await nextTick()
-      if (videoEl.value) {
-        videoEl.value.srcObject = stream
-        await videoEl.value.play().catch(() => undefined)
-      }
-      cameraReady.value = true
-      return true
-    } catch {
-      // try next front-facing constraint
-    }
+  const live = stream.getVideoTracks().some((t) => t.readyState === 'live')
+  cameraReady.value = live
+  if (!live) {
+    cameraError.value = frontCameraErrorMessage('unavailable')
   }
-  return false
+  return live
+}
+
+async function startFrontCamera(): Promise<boolean> {
+  startingCamera.value = true
+  cameraError.value = ''
+  cameraReady.value = false
+
+  try {
+    if (!isSecureCameraContext(window.isSecureContext, navigator.mediaDevices)) {
+      cameraError.value = frontCameraErrorMessage(
+        window.isSecureContext ? 'unsupported' : 'insecure',
+      )
+      return false
+    }
+
+    // Prefer a stream already opened during the Check In user gesture
+    let stream: MediaStream | null = null
+    if (pendingFrontStreamPromise) {
+      const pending = pendingFrontStreamPromise
+      pendingFrontStreamPromise = null
+      stream = await pending
+      // If the user navigated away while waiting, drop the stream
+      if (screen.value !== 'photo') {
+        stream?.getTracks().forEach((track) => track.stop())
+        return false
+      }
+    }
+
+    if (!stream) {
+      try {
+        stream = await acquireFrontCameraStream(navigator.mediaDevices, {
+          isSecureContext: window.isSecureContext,
+        })
+      } catch (err) {
+        if (err instanceof FrontCameraError) {
+          cameraError.value = err.message
+        } else {
+          cameraError.value = frontCameraErrorMessage(classifyGetUserMediaError(err))
+        }
+        return false
+      }
+    }
+
+    // Stop any previous preview tracks before attaching the new stream
+    if (mediaStream && mediaStream !== stream) {
+      for (const track of mediaStream.getTracks()) track.stop()
+      mediaStream = null
+    }
+
+    const ok = await attachStreamToVideo(stream)
+    if (!ok) {
+      for (const track of stream.getTracks()) track.stop()
+      if (mediaStream === stream) mediaStream = null
+      if (!cameraError.value) {
+        cameraError.value = frontCameraErrorMessage('unavailable')
+      }
+    }
+    return ok
+  } finally {
+    startingCamera.value = false
+  }
 }
 
 async function openPhotoStep(appointment: any) {
@@ -304,11 +436,14 @@ async function openPhotoStep(appointment: any) {
   screen.value = 'photo'
   resetInactivityTimer()
   await nextTick()
-  const ok = await startFrontCamera()
-  if (!ok) {
-    // Auto-skip when camera is unavailable
-    await completeCheckIn(appointment)
-  }
+  // Stay on the photo step even when the camera fails so the patient can
+  // tap Enable Camera (restores user gesture) or Skip — do not auto-check-in.
+  await startFrontCamera()
+}
+
+async function retryCamera() {
+  resetInactivityTimer()
+  await startFrontCamera()
 }
 
 // ── API: look up appointment, then photo step or success ──────────────────────
@@ -316,6 +451,10 @@ async function handleLookup() {
   loading.value = true
 
   const patientName = form.value.fullName.trim()
+
+  // Kick off the front camera during this click before any await loses
+  // transient user activation (critical on iPad / Safari kiosk browsers).
+  beginFrontCameraDuringUserGesture()
 
   try {
     const lookupRes = await fetch('/api/appointments/kiosk/lookup', {
@@ -329,6 +468,7 @@ async function handleLookup() {
     })
 
     if (!lookupRes.ok) {
+      stopPendingFrontStream()
       goToSuccess(patientName, null)
       return
     }
@@ -337,6 +477,7 @@ async function handleLookup() {
     await openPhotoStep(appointment)
   } catch (e) {
     console.error('Kiosk check-in error:', e)
+    stopPendingFrontStream()
     goToSuccess(patientName, null)
   } finally {
     loading.value = false
@@ -385,9 +526,14 @@ async function retakePhoto() {
   clearCapture()
   resetInactivityTimer()
   if (!mediaStream) {
-    const ok = await startFrontCamera()
-    if (!ok) {
-      await skipPhoto()
+    await startFrontCamera()
+  } else {
+    cameraReady.value = true
+    cameraError.value = ''
+    await nextTick()
+    if (videoEl.value && mediaStream) {
+      videoEl.value.srcObject = mediaStream
+      await videoEl.value.play().catch(() => undefined)
     }
   }
 }
@@ -549,6 +695,23 @@ h2 {
 
 .camera-preview.mirror {
   transform: scaleX(-1);
+}
+
+.camera-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: #e2e8f0;
+  font-size: 1.05rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.camera-placeholder.error {
+  color: #fecaca;
 }
 
 .capture-canvas {
