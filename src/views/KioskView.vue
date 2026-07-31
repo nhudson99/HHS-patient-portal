@@ -63,17 +63,22 @@
     <div v-else-if="screen === 'photo'" class="kiosk-card photo-card">
       <h2>Update Profile Photo</h2>
       <p class="kiosk-instruction">
-        Look at the camera and take a photo for your patient profile. You can skip this step.
+        {{ capturedDataUrl
+          ? 'Review your photo, then use it to finish check-in or retake.'
+          : 'Center your face in the live preview below, then capture a photo before finishing check-in. You can skip this step.' }}
       </p>
 
-      <div class="camera-frame">
+      <div class="camera-frame" :class="{ 'has-capture': !!capturedDataUrl }">
+        <!-- Keep <video> laid out (not display:none) while starting — hidden videos
+             often never decode frames on tablet browsers, which blanks the preview. -->
         <video
-          v-show="!capturedDataUrl && cameraReady"
+          v-show="!capturedDataUrl"
           ref="videoEl"
           class="camera-preview mirror"
           autoplay
-          playsinline
           muted
+          playsinline
+          webkit-playsinline
         ></video>
         <img
           v-if="capturedDataUrl"
@@ -81,11 +86,16 @@
           alt="Captured profile photo"
           class="camera-preview"
         />
-        <div v-if="!capturedDataUrl && !cameraReady && !cameraError" class="camera-placeholder">
-          Starting camera…
+        <div
+          v-if="!capturedDataUrl && !cameraReady"
+          class="camera-placeholder"
+          :class="{ error: !!cameraError }"
+        >
+          <template v-if="cameraError">{{ cameraError }}</template>
+          <template v-else>{{ startingCamera ? 'Opening camera…' : 'Starting camera…' }}</template>
         </div>
-        <div v-if="!capturedDataUrl && cameraError" class="camera-placeholder error">
-          {{ cameraError }}
+        <div v-if="!capturedDataUrl && cameraReady" class="camera-guide" aria-hidden="true">
+          <span class="camera-guide-ring"></span>
         </div>
         <canvas ref="canvasEl" class="capture-canvas"></canvas>
       </div>
@@ -98,7 +108,7 @@
           :disabled="uploading"
           @click="takePhoto"
         >
-          Take Photo
+          Capture Photo
         </button>
         <button
           v-else
@@ -110,18 +120,18 @@
           {{ startingCamera ? 'Starting…' : 'Enable Camera' }}
         </button>
         <button type="button" class="kiosk-btn secondary" :disabled="uploading" @click="skipPhoto">
-          Skip
+          Skip Photo
         </button>
       </div>
       <div v-else class="photo-actions">
         <button type="button" class="kiosk-btn primary" :disabled="uploading || !capturedBlob" @click="usePhoto">
-          {{ uploading ? 'Saving…' : 'Use Photo' }}
+          {{ uploading ? 'Saving…' : 'Use Photo & Check In' }}
         </button>
         <button type="button" class="kiosk-btn secondary" :disabled="uploading" @click="retakePhoto">
           Retake
         </button>
         <button type="button" class="kiosk-btn secondary" :disabled="uploading" @click="skipPhoto">
-          Skip
+          Skip Photo
         </button>
       </div>
     </div>
@@ -333,35 +343,72 @@ function beginFrontCameraDuringUserGesture() {
   pendingFrontStreamPromise = request
 }
 
-async function waitForVideoFrame(video: HTMLVideoElement): Promise<void> {
-  if (video.readyState >= 2 && video.videoWidth > 0) return
+function videoHasPreviewFrame(video: HTMLVideoElement): boolean {
+  return video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0
+}
 
-  await new Promise<void>((resolve) => {
+async function waitForVideoFrame(video: HTMLVideoElement): Promise<boolean> {
+  if (videoHasPreviewFrame(video)) return true
+
+  return new Promise<boolean>((resolve) => {
     let settled = false
-    const finish = () => {
+    const finish = (ok: boolean) => {
       if (settled) return
       settled = true
-      video.removeEventListener('loadeddata', finish)
-      resolve()
+      video.removeEventListener('loadeddata', onUpdate)
+      video.removeEventListener('loadedmetadata', onUpdate)
+      video.removeEventListener('playing', onUpdate)
+      resolve(ok)
     }
-    video.addEventListener('loadeddata', finish)
-    window.setTimeout(finish, 2000)
+    const onUpdate = () => {
+      if (videoHasPreviewFrame(video)) finish(true)
+    }
+
+    video.addEventListener('loadeddata', onUpdate)
+    video.addEventListener('loadedmetadata', onUpdate)
+    video.addEventListener('playing', onUpdate)
+
+    const maybeRvf = video as HTMLVideoElement & {
+      requestVideoFrameCallback?: (cb: () => void) => number
+    }
+    if (typeof maybeRvf.requestVideoFrameCallback === 'function') {
+      maybeRvf.requestVideoFrameCallback(() => finish(videoHasPreviewFrame(video)))
+    }
+
+    window.setTimeout(() => finish(videoHasPreviewFrame(video)), 4000)
   })
 }
 
 async function attachStreamToVideo(stream: MediaStream): Promise<boolean> {
   mediaStream = stream
+  // Ensure the photo-step <video> is mounted and laid out before attaching.
+  // A display:none video often never produces frames on tablet WebViews.
   await nextTick()
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+
   const video = videoEl.value
   if (!video) {
     return false
   }
 
+  video.muted = true
+  video.setAttribute('playsinline', 'true')
+  video.setAttribute('webkit-playsinline', 'true')
   video.srcObject = stream
+
+  // Start playback first so frames can decode, then wait for dimensions.
+  // Promise.resolve covers environments where play() returns void (jsdom).
+  await Promise.resolve(video.play()).catch(() => undefined)
   await waitForVideoFrame(video)
-  await video.play().catch(() => undefined)
+  if (!videoHasPreviewFrame(video) && video.paused) {
+    await Promise.resolve(video.play()).catch(() => undefined)
+    await waitForVideoFrame(video)
+  }
 
   const live = stream.getVideoTracks().some((t) => t.readyState === 'live')
+  // Once the track is live and attached to a laid-out <video>, show the
+  // preview and allow capture. Waiting only on videoWidth caused blank
+  // previews on tablet WebViews that lag metadata while frames still paint.
   cameraReady.value = live
   if (!live) {
     cameraError.value = frontCameraErrorMessage('unavailable')
@@ -533,7 +580,7 @@ async function retakePhoto() {
     await nextTick()
     if (videoEl.value && mediaStream) {
       videoEl.value.srcObject = mediaStream
-      await videoEl.value.play().catch(() => undefined)
+      await Promise.resolve(videoEl.value.play()).catch(() => undefined)
     }
   }
 }
@@ -679,18 +726,24 @@ h2 {
 .camera-frame {
   position: relative;
   width: 100%;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 3 / 4;
+  max-height: min(58vh, 520px);
+  margin-inline: auto;
   background: #0f172a;
-  border-radius: 12px;
+  border-radius: 16px;
   overflow: hidden;
   margin-bottom: 20px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 .camera-preview {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
+  background: #0f172a;
 }
 
 .camera-preview.mirror {
@@ -700,6 +753,7 @@ h2 {
 .camera-placeholder {
   position: absolute;
   inset: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -708,10 +762,29 @@ h2 {
   font-size: 1.05rem;
   line-height: 1.45;
   text-align: center;
+  background: #0f172a;
 }
 
 .camera-placeholder.error {
   color: #fecaca;
+}
+
+.camera-guide {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.camera-guide-ring {
+  width: min(68%, 260px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.28);
 }
 
 .capture-canvas {
