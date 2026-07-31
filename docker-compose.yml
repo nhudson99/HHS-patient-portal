@@ -42,6 +42,30 @@ services:
       - hhs-network
     restart: unless-stopped
 
+  # Database bootstrap (idempotent schema + seed for local dev)
+  db-init:
+    image: postgres:16-alpine
+    container_name: hhs-db-init
+    environment:
+      PGPASSWORD: ${DB_PASSWORD:-postgres}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-hhs_patient_portal}
+      DB_USER: ${DB_USER:-postgres}
+    volumes:
+      - ./server/db:/schema:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "
+      psql -h $$DB_HOST -p $$DB_PORT -U $$DB_USER -d $$DB_NAME -v ON_ERROR_STOP=1 -f /schema/schema.sql &&
+      psql -h $$DB_HOST -p $$DB_PORT -U $$DB_USER -d $$DB_NAME -v ON_ERROR_STOP=1 -f /schema/seed.sql
+      "
+    networks:
+      - hhs-network
+    restart: "no"
+
   # API Backend
   api:
     build:
@@ -95,6 +119,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
@@ -103,6 +129,26 @@ services:
     networks:
       - hhs-network
     restart: unless-stopped
+
+  # Vue frontend build — writes ./dist for nginx to serve.
+  # One-shot: recreate with `docker compose up -d --force-recreate frontend`
+  # (./dev.sh up does this automatically) so compose picks up Vue/TS changes.
+  frontend:
+    image: node:21-alpine
+    container_name: hhs-frontend-build
+    working_dir: /app
+    environment:
+      VITE_AZURE_CLIENT_ID: ${VITE_AZURE_CLIENT_ID:-}
+      VITE_AZURE_TENANT_ID: ${VITE_AZURE_TENANT_ID:-}
+      VITE_AZURE_REDIRECT_URI: ${VITE_AZURE_REDIRECT_URI:-}
+    volumes:
+      - ./:/app
+      - frontend_node_modules:/app/node_modules
+    command: >
+      sh -c "npm ci --prefer-offline --no-audit && npm run build"
+    networks:
+      - hhs-network
+    restart: "no"
 
   # Nginx Reverse Proxy
   nginx:
@@ -118,6 +164,8 @@ services:
     depends_on:
       api:
         condition: service_healthy
+      frontend:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/health"]
       interval: 30s
@@ -131,6 +179,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  frontend_node_modules:
 
 networks:
   hhs-network:

@@ -1,6 +1,6 @@
 """
-Events routes for doctor calendar
-Handles calendar events, appointments, and doctor scheduling
+Events routes for provider calendar
+Handles calendar events, appointments, and provider scheduling
 """
 
 from flask import Blueprint, request, jsonify, current_app
@@ -9,6 +9,42 @@ from api.db.connection import execute_query, DatabaseTransaction
 from api.middleware.auth import authenticate
 
 events_bp = Blueprint('events', __name__, url_prefix='/api/events')
+
+_EVENT_TYPE_LABELS = {
+    'appointment': 'Appointment',
+    'reminder': 'Reminder',
+    'note': 'Note',
+    'blocked_time': 'Blocked Time',
+    'meeting': 'Meeting',
+    'other': 'Other',
+}
+
+
+def _generic_event_title(event_type, appointment_status=None):
+    """Return a PHI-safe display title for another provider's event."""
+    if event_type == 'appointment' and appointment_status:
+        return f"Appointment ({appointment_status})"
+    return _EVENT_TYPE_LABELS.get(event_type, 'Other')
+
+
+def _apply_event_visibility(event, viewer_doctor_id):
+    """Tag own events and redact PHI from other providers' schedule rows."""
+    result = dict(event)
+    event_doctor_id = str(result.get('doctor_id', ''))
+    viewer_id = str(viewer_doctor_id)
+    is_own_event = event_doctor_id == viewer_id
+    result['is_own_event'] = is_own_event
+
+    if not is_own_event:
+        result['patient_name'] = None
+        result['patient_id'] = None
+        result['description'] = None
+        result['title'] = _generic_event_title(
+            result.get('event_type'),
+            result.get('appointment_status'),
+        )
+
+    return result
 
 
 def serialize_event(event):
@@ -41,52 +77,82 @@ def get_events():
         if not start_date or not end_date:
             return jsonify({'error': 'start_date and end_date required'}), 400
         
-        # Get doctor ID from user
+        include_all_providers = request.args.get('include_all_providers', '').lower() in ('1', 'true', 'yes')
+
+        # Ensure requester is a doctor
         doctor_query = "SELECT id FROM doctors WHERE user_id = %s"
         doctor = execute_query(doctor_query, (user['id'],), fetch_one=True)
         
         if not doctor:
-            return jsonify({'error': 'User is not a doctor'}), 403
+            return jsonify({'error': 'User is not a provider'}), 403
         
         doctor_id = doctor['id']
-        
-        # Get events for date range
-        events_query = """
-            SELECT id, doctor_id, patient_id, event_type, title, description, 
-                   event_date, start_time, end_time, color, is_all_day,
-                   created_at, updated_at
-            FROM events
-            WHERE doctor_id = %s 
-            AND event_date BETWEEN %s AND %s
-            ORDER BY event_date, start_time
-        """
-        
-        events = execute_query(
-            events_query, 
-            (doctor_id, start_date, end_date), 
-            fetch_all=True
-        )
+
+        if include_all_providers:
+            events_query = """
+                SELECT e.id, e.doctor_id, e.patient_id, e.event_type, e.title, e.description,
+                       e.event_date, e.start_time, e.end_time, e.color, e.is_all_day,
+                       e.created_at, e.updated_at,
+                       d.first_name || ' ' || d.last_name AS provider_name,
+                       p.first_name || ' ' || p.last_name AS patient_name
+                FROM events e
+                JOIN doctors d ON d.id = e.doctor_id
+                LEFT JOIN patients p ON p.id = e.patient_id
+                WHERE e.event_date BETWEEN %s AND %s
+                ORDER BY e.event_date, e.start_time, provider_name
+            """
+            events_params = (start_date, end_date)
+        else:
+            events_query = """
+                SELECT e.id, e.doctor_id, e.patient_id, e.event_type, e.title, e.description,
+                       e.event_date, e.start_time, e.end_time, e.color, e.is_all_day,
+                       e.created_at, e.updated_at,
+                       d.first_name || ' ' || d.last_name AS provider_name,
+                       p.first_name || ' ' || p.last_name AS patient_name
+                FROM events e
+                JOIN doctors d ON d.id = e.doctor_id
+                LEFT JOIN patients p ON p.id = e.patient_id
+                WHERE e.doctor_id = %s
+                AND e.event_date BETWEEN %s AND %s
+                ORDER BY e.event_date, e.start_time
+            """
+            events_params = (doctor_id, start_date, end_date)
+
+        events = execute_query(events_query, events_params, fetch_all=True)
         
         serialized_events = [serialize_event(e) for e in (events or [])]
         
         # Also fetch appointments for this doctor in the date range
-        appointments_query = """
-            SELECT a.id, a.doctor_id, a.patient_id, a.appointment_date, 
-                   a.status, a.reason, a.notes,
-                   a.created_at, a.updated_at,
-                   p.first_name || ' ' || p.last_name AS patient_name
-            FROM appointments a
-            LEFT JOIN patients p ON a.patient_id = p.id
-            WHERE a.doctor_id = %s
-            AND a.appointment_date BETWEEN %s AND %s
-            ORDER BY a.appointment_date
-        """
-        
-        appointments = execute_query(
-            appointments_query,
-            (doctor_id, start_date, end_date),
-            fetch_all=True
-        )
+        if include_all_providers:
+            appointments_query = """
+                SELECT a.id, a.doctor_id, a.patient_id, a.appointment_date,
+                       a.status, a.reason, a.notes,
+                       a.created_at, a.updated_at,
+                       p.first_name || ' ' || p.last_name AS patient_name,
+                       d.first_name || ' ' || d.last_name AS provider_name
+                FROM appointments a
+                JOIN doctors d ON d.id = a.doctor_id
+                LEFT JOIN patients p ON p.id = a.patient_id
+                WHERE a.appointment_date::date BETWEEN %s AND %s
+                ORDER BY a.appointment_date, provider_name
+            """
+            appointments_params = (start_date, end_date)
+        else:
+            appointments_query = """
+                SELECT a.id, a.doctor_id, a.patient_id, a.appointment_date,
+                       a.status, a.reason, a.notes,
+                       a.created_at, a.updated_at,
+                       p.first_name || ' ' || p.last_name AS patient_name,
+                       d.first_name || ' ' || d.last_name AS provider_name
+                FROM appointments a
+                JOIN doctors d ON d.id = a.doctor_id
+                LEFT JOIN patients p ON p.id = a.patient_id
+                WHERE a.doctor_id = %s
+                AND a.appointment_date::date BETWEEN %s AND %s
+            """
+            appointments_params = (doctor_id, start_date, end_date)
+
+        appointments = execute_query(appointments_query, appointments_params, fetch_all=True)
         
         # Map status to color
         status_colors = {
@@ -116,14 +182,22 @@ def get_events():
                 'start_time': start_time,
                 'end_time': None,
                 'color': status_colors.get(apt['status'], '#3b82f6'),
+                'provider_name': apt.get('provider_name'),
+                'patient_name': apt.get('patient_name'),
+                'appointment_status': apt['status'],
                 'is_all_day': False,
                 'created_at': apt['created_at'].isoformat() if isinstance(apt['created_at'], datetime) else apt.get('created_at'),
                 'updated_at': apt['updated_at'].isoformat() if isinstance(apt['updated_at'], datetime) else apt.get('updated_at'),
             }
             serialized_events.append(apt_event)
+
+        visible_events = [
+            _apply_event_visibility(event, doctor_id)
+            for event in serialized_events
+        ]
         
         return jsonify({
-            'events': serialized_events
+            'events': visible_events
         }), 200
         
     except Exception:
@@ -151,7 +225,7 @@ def create_event():
         doctor = execute_query(doctor_query, (user['id'],), fetch_one=True)
         
         if not doctor:
-            return jsonify({'error': 'User is not a doctor'}), 403
+            return jsonify({'error': 'User is not a provider'}), 403
         
         doctor_id = doctor['id']
         title = data['title']
@@ -211,7 +285,7 @@ def get_event(event_id):
         doctor = execute_query(doctor_query, (user['id'],), fetch_one=True)
         
         if not doctor:
-            return jsonify({'error': 'User is not a doctor'}), 403
+            return jsonify({'error': 'User is not a provider'}), 403
         
         # Get event (verify ownership)
         event_query = """
@@ -249,7 +323,7 @@ def update_event(event_id):
         doctor = execute_query(doctor_query, (user['id'],), fetch_one=True)
         
         if not doctor:
-            return jsonify({'error': 'User is not a doctor'}), 403
+            return jsonify({'error': 'User is not a provider'}), 403
         
         # Verify event ownership
         verify_query = "SELECT id FROM events WHERE id = %s AND doctor_id = %s"
@@ -310,7 +384,7 @@ def delete_event(event_id):
         doctor = execute_query(doctor_query, (user['id'],), fetch_one=True)
         
         if not doctor:
-            return jsonify({'error': 'User is not a doctor'}), 403
+            return jsonify({'error': 'User is not a provider'}), 403
         
         # Delete event (verify ownership)
         delete_query = "DELETE FROM events WHERE id = %s AND doctor_id = %s RETURNING id"

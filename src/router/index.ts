@@ -20,10 +20,15 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/KioskView.vue')
   },
   {
-    path: '/doctor',
-    name: 'DoctorDashboard',
-    component: () => import('@/views/DoctorDashboard.vue'),
+    path: '/provider',
+    name: 'ProviderDashboard',
+    component: () => import('@/views/ProviderDashboard.vue'),
     meta: { requiresAuth: true, role: 'doctor' }
+  },
+  {
+    // Legacy path redirect
+    path: '/doctor',
+    redirect: '/provider'
   },
   {
     path: '/patients',
@@ -36,6 +41,12 @@ const routes: RouteRecordRaw[] = [
     name: 'PatientDashboard',
     component: () => import('@/views/PatientDashboard.vue'),
     meta: { requiresAuth: true, role: 'patient' }
+  },
+  {
+    path: '/messages',
+    name: 'Messages',
+    component: () => import('@/views/MessagesView.vue'),
+    meta: { requiresAuth: true }
   },
   {
     path: '/profile',
@@ -76,7 +87,7 @@ router.beforeEach(async (to, _from, next) => {
     next('/')
   } else if (to.path === '/' && user) {
     // Redirect logged in users to their dashboard
-    next(user.role === 'doctor' ? '/doctor' : '/patient')
+    next(user.role === 'doctor' ? '/provider' : '/patient')
   } else if (to.path === '/admin') {
     // /admin handles its own auth via Microsoft SSO — always allow
     next()

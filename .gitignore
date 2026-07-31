@@ -5,6 +5,7 @@ dist
 .env
 .env.local
 .env.*.local
+.env.sonarqube
 .env.sonarqube.local
 
 # Python
@@ -17,9 +18,17 @@ venv/
 env/
 ENV/
 *.egg-info/
+.coverage
+coverage*.xml
+htmlcov/
 
 # TypeScript server (legacy)
 server/
+!server/
+server/*
+!server/db/
+!server/db/schema.sql
+!server/db/seed.sql
 coverage/
 .scannerwork/
 .sonar/

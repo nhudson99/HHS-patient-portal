@@ -87,6 +87,7 @@ def kiosk_lookup():
         # Find their next upcoming appointment
         apt_query = """
             SELECT a.id,
+                   a.patient_id,
                    a.appointment_date,
                    a.reason,
                    a.status,
@@ -187,7 +188,7 @@ def request_appointment():
         doctor_id = data['doctor_id']
         doctor = execute_query("SELECT id FROM doctors WHERE id = %s", (doctor_id,), fetch_one=True)
         if not doctor:
-            return jsonify({'error': 'Doctor not found'}), 404
+            return jsonify({'error': 'Provider not found'}), 404
 
         insert_query = """
             INSERT INTO appointments
@@ -224,20 +225,20 @@ def request_appointment():
 def confirm_appointment(appointment_id):
     """
     PATCH /api/appointments/<appointment_id>/confirm
-    Doctor confirms a pending appointment
+    Provider confirms a pending appointment
     """
     try:
         user = request.user
 
         if user.get('role') != 'doctor':
-            return jsonify({'error': 'Only doctors can confirm appointments'}), 403
+            return jsonify({'error': 'Only providers can confirm appointments'}), 403
 
         # Get doctor ID
         doctor_query = "SELECT id FROM doctors WHERE user_id = %s"
         doctor = execute_query(doctor_query, (user['id'],), fetch_one=True)
 
         if not doctor:
-            return jsonify({'error': 'Doctor record not found'}), 404
+            return jsonify({'error': 'Provider record not found'}), 404
 
         # Verify appointment belongs to this doctor and is pending
         apt_query = """

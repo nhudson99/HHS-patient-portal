@@ -6,8 +6,23 @@ HIPAA Compliance: Ensures only authenticated users can access PHI
 from functools import wraps
 from flask import request, jsonify
 import os
+from datetime import datetime, timezone
+from psycopg2 import errors as pg_errors
 from api.utils.session_manager import validate_session
 from api.db.connection import execute_query
+
+
+def _schema_not_initialized_response():
+    return jsonify({
+        'error': 'Authentication database schema is not initialized. Run database setup and try again.'
+    }), 503
+
+
+def _comparison_now(reference_dt):
+    if reference_dt and reference_dt.tzinfo and reference_dt.tzinfo.utcoffset(reference_dt) is not None:
+        return datetime.now(timezone.utc)
+    return datetime.now()
+
 
 def authenticate(f):
     """
@@ -34,13 +49,18 @@ def authenticate(f):
         if not session:
             return jsonify({'error': 'Invalid or expired session'}), 401
         
-        # Get user details
+        # Get user details — require is_active (fail closed if column missing).
         query = """
-            SELECT id, username, role, email 
-            FROM users 
+            SELECT id, username, role, email
+            FROM users
             WHERE id = %s AND is_active = true
         """
-        user = execute_query(query, (session['user_id'],), fetch_one=True)
+        try:
+            user = execute_query(query, (session['user_id'],), fetch_one=True)
+        except Exception as exc:
+            if isinstance(exc, (pg_errors.UndefinedTable, pg_errors.UndefinedColumn)):
+                return _schema_not_initialized_response()
+            raise
         
         if not user:
             return jsonify({'error': 'User not found or inactive'}), 401
@@ -87,14 +107,19 @@ def check_account_lock(f):
             return f(*args, **kwargs)
         
         query = "SELECT account_locked_until FROM users WHERE username = %s"
-        result = execute_query(query, (username,), fetch_one=True)
+        try:
+            result = execute_query(query, (username,), fetch_one=True)
+        except Exception as exc:
+            if isinstance(exc, (pg_errors.UndefinedTable, pg_errors.UndefinedColumn)):
+                return _schema_not_initialized_response()
+            raise
         
         if result and result['account_locked_until']:
             lockout_time = result['account_locked_until']
-            from datetime import datetime
-            
-            if lockout_time > datetime.now():
-                minutes_left = int((lockout_time - datetime.now()).total_seconds() / 60) + 1
+            current_time = _comparison_now(lockout_time)
+
+            if lockout_time > current_time:
+                minutes_left = int((lockout_time - current_time).total_seconds() / 60) + 1
                 return jsonify({
                     'error': 'Account temporarily locked',
                     'minutesRemaining': minutes_left

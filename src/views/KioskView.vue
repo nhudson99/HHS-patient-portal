@@ -18,7 +18,7 @@
       <h2>Patient Check-In</h2>
       <p class="kiosk-instruction">Please enter your full name and date of birth</p>
 
-      <form @submit.prevent="handleCheckIn" class="kiosk-form">
+      <form @submit.prevent="handleLookup" class="kiosk-form">
         <div class="form-group">
           <label for="fullName">Full Name</label>
           <input
@@ -59,6 +59,52 @@
       </form>
     </div>
 
+    <!-- ── Profile photo capture ── -->
+    <div v-else-if="screen === 'photo'" class="kiosk-card photo-card">
+      <h2>Update Profile Photo</h2>
+      <p class="kiosk-instruction">
+        Look at the camera and take a photo for your patient profile. You can skip this step.
+      </p>
+
+      <div class="camera-frame">
+        <video
+          v-show="!capturedDataUrl"
+          ref="videoEl"
+          class="camera-preview mirror"
+          autoplay
+          playsinline
+          muted
+        ></video>
+        <img
+          v-if="capturedDataUrl"
+          :src="capturedDataUrl"
+          alt="Captured profile photo"
+          class="camera-preview"
+        />
+        <canvas ref="canvasEl" class="capture-canvas"></canvas>
+      </div>
+
+      <div v-if="!capturedDataUrl" class="photo-actions">
+        <button type="button" class="kiosk-btn primary" :disabled="!cameraReady || uploading" @click="takePhoto">
+          Take Photo
+        </button>
+        <button type="button" class="kiosk-btn secondary" :disabled="uploading" @click="skipPhoto">
+          Skip
+        </button>
+      </div>
+      <div v-else class="photo-actions">
+        <button type="button" class="kiosk-btn primary" :disabled="uploading || !capturedBlob" @click="usePhoto">
+          {{ uploading ? 'Saving…' : 'Use Photo' }}
+        </button>
+        <button type="button" class="kiosk-btn secondary" :disabled="uploading" @click="retakePhoto">
+          Retake
+        </button>
+        <button type="button" class="kiosk-btn secondary" :disabled="uploading" @click="skipPhoto">
+          Skip
+        </button>
+      </div>
+    </div>
+
     <!-- ── Success / confirmation screen ── -->
     <div v-else-if="screen === 'success'" class="kiosk-card success-card">
       <div class="success-icon">✓</div>
@@ -74,7 +120,7 @@
           <span class="summary-value">{{ formatDateTime(appointmentInfo.appointment_date) }}</span>
         </div>
         <div v-if="appointmentInfo?.doctor_name" class="summary-row">
-          <span class="summary-label">Doctor</span>
+          <span class="summary-label">Provider</span>
           <span class="summary-value">Dr. {{ appointmentInfo.doctor_name }}</span>
         </div>
         <div v-if="appointmentInfo?.reason" class="summary-row">
@@ -104,17 +150,25 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
 
 // ── State ─────────────────────────────────────────────────────────────────────
-type Screen = 'welcome' | 'form' | 'success'
+type Screen = 'welcome' | 'form' | 'photo' | 'success'
 
 const screen = ref<Screen>('welcome')
 const loading = ref(false)
+const uploading = ref(false)
 const appointmentInfo = ref<any>(null)
 const checkedInName = ref('')
+const cameraReady = ref(false)
+const capturedDataUrl = ref<string | null>(null)
+const capturedBlob = ref<Blob | null>(null)
 
 const form = ref({ fullName: '', dob: '', appointmentTime: '' })
+
+const videoEl = ref<HTMLVideoElement | null>(null)
+const canvasEl = ref<HTMLCanvasElement | null>(null)
+let mediaStream: MediaStream | null = null
 
 // ── Countdown (success screen only) ──────────────────────────────────────────
 const RESET_AFTER_SECS = 10
@@ -124,7 +178,8 @@ const countdownPct = computed(() => (countdownSecs.value / RESET_AFTER_SECS) * 1
 let countdownTimer: ReturnType<typeof setInterval> | null = null
 let inactivityTimer: ReturnType<typeof setTimeout> | null = null
 
-const INACTIVITY_MS = 10_000 // 10 s of no interaction resets from any screen
+const INACTIVITY_MS = 10_000
+const PHOTO_INACTIVITY_MS = 60_000
 
 function startCountdown() {
   countdownSecs.value = RESET_AFTER_SECS
@@ -140,12 +195,12 @@ function stopCountdown() {
   countdownTimer = null
 }
 
-// ── Inactivity reset (fires from form/welcome if user walks away) ─────────────
+// ── Inactivity reset (fires from form/welcome/photo if user walks away) ───────
 function resetInactivityTimer() {
   clearTimeout(inactivityTimer!)
-  if (screen.value !== 'welcome') {
-    inactivityTimer = setTimeout(() => reset(), INACTIVITY_MS)
-  }
+  if (screen.value === 'welcome') return
+  const delay = screen.value === 'photo' ? PHOTO_INACTIVITY_MS : INACTIVITY_MS
+  inactivityTimer = setTimeout(() => reset(), delay)
 }
 
 function clearInactivityTimer() {
@@ -153,25 +208,116 @@ function clearInactivityTimer() {
   inactivityTimer = null
 }
 
+function stopCamera() {
+  if (mediaStream) {
+    for (const track of mediaStream.getTracks()) {
+      track.stop()
+    }
+    mediaStream = null
+  }
+  if (videoEl.value) {
+    videoEl.value.srcObject = null
+  }
+  cameraReady.value = false
+}
+
+function clearCapture() {
+  capturedDataUrl.value = null
+  capturedBlob.value = null
+}
+
 // ── Reset to welcome ──────────────────────────────────────────────────────────
 function reset() {
   stopCountdown()
   clearInactivityTimer()
+  stopCamera()
+  clearCapture()
   screen.value = 'welcome'
   form.value = { fullName: '', dob: '', appointmentTime: '' }
   appointmentInfo.value = null
   checkedInName.value = ''
   loading.value = false
+  uploading.value = false
 }
 
-// ── API: look up appointment then check in ────────────────────────────────────
-async function handleCheckIn() {
+function goToSuccess(name: string, appointment: any | null) {
+  stopCamera()
+  clearCapture()
+  checkedInName.value = name
+  appointmentInfo.value = appointment
+  screen.value = 'success'
+  clearInactivityTimer()
+  startCountdown()
+}
+
+async function completeCheckIn(appointment: any) {
+  const patientName = form.value.fullName.trim()
+  try {
+    const checkinRes = await fetch(`/api/appointments/${appointment.id}/checkin-guest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        patient_name: patientName,
+        date_of_birth: form.value.dob,
+        appointment_time: form.value.appointmentTime,
+      }),
+    })
+    goToSuccess(patientName, checkinRes.ok ? appointment : null)
+  } catch (e) {
+    console.error('Kiosk check-in error:', e)
+    goToSuccess(patientName, null)
+  }
+}
+
+async function startFrontCamera(): Promise<boolean> {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    return false
+  }
+
+  // Front-facing only — do not fall back to any/rear camera on dual-camera tablets
+  const attempts: MediaStreamConstraints[] = [
+    { video: { facingMode: { exact: 'user' } }, audio: false },
+    { video: { facingMode: 'user' }, audio: false },
+  ]
+
+  for (const constraints of attempts) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      mediaStream = stream
+      await nextTick()
+      if (videoEl.value) {
+        videoEl.value.srcObject = stream
+        await videoEl.value.play().catch(() => undefined)
+      }
+      cameraReady.value = true
+      return true
+    } catch {
+      // try next front-facing constraint
+    }
+  }
+  return false
+}
+
+async function openPhotoStep(appointment: any) {
+  appointmentInfo.value = appointment
+  clearCapture()
+  screen.value = 'photo'
+  resetInactivityTimer()
+  await nextTick()
+  const ok = await startFrontCamera()
+  if (!ok) {
+    // Auto-skip when camera is unavailable
+    await completeCheckIn(appointment)
+  }
+}
+
+// ── API: look up appointment, then photo step or success ──────────────────────
+async function handleLookup() {
   loading.value = true
 
   const patientName = form.value.fullName.trim()
 
   try {
-    // Step 1: find the patient's next upcoming appointment by name + DOB
     const lookupRes = await fetch('/api/appointments/kiosk/lookup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -183,45 +329,111 @@ async function handleCheckIn() {
     })
 
     if (!lookupRes.ok) {
-      // Patient not found — alert already sent server-side; show success anyway
-      checkedInName.value = patientName
-      appointmentInfo.value = null
-      screen.value = 'success'
-      clearInactivityTimer()
-      startCountdown()
+      goToSuccess(patientName, null)
       return
     }
 
     const { appointment } = await lookupRes.json()
-
-    // Step 2: check in via the no-auth guest endpoint
-    const checkinRes = await fetch(`/api/appointments/${appointment.id}/checkin-guest`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        patient_name: patientName,
-        date_of_birth: form.value.dob,
-        appointment_time: form.value.appointmentTime,
-      }),
-    })
-
-    checkedInName.value = patientName
-    // Show what we found even if the final checkin call failed
-    appointmentInfo.value = checkinRes.ok ? appointment : null
-    screen.value = 'success'
-    clearInactivityTimer()
-    startCountdown()
-
+    await openPhotoStep(appointment)
   } catch (e) {
     console.error('Kiosk check-in error:', e)
-    // Network/unexpected error — still send to success to avoid confusing patients
-    checkedInName.value = patientName
-    appointmentInfo.value = null
-    screen.value = 'success'
-    clearInactivityTimer()
-    startCountdown()
+    goToSuccess(patientName, null)
   } finally {
     loading.value = false
+  }
+}
+
+async function takePhoto() {
+  const video = videoEl.value
+  const canvas = canvasEl.value
+  if (!video || !canvas || !cameraReady.value) return
+
+  const width = video.videoWidth || 640
+  const height = video.videoHeight || 480
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  // Draw un-mirrored frame (preview is CSS-mirrored only)
+  ctx.drawImage(video, 0, 0, width, height)
+
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.92)
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob((result) => resolve(result), 'image/jpeg', 0.92)
+  })
+
+  if (!blob) {
+    // Fallback: derive blob from data URL so Use Photo is never enabled without bytes
+    try {
+      const res = await fetch(dataUrl)
+      capturedBlob.value = await res.blob()
+      capturedDataUrl.value = dataUrl
+    } catch (e) {
+      console.error('Failed to capture photo blob:', e)
+      clearCapture()
+      return
+    }
+  } else {
+    capturedBlob.value = blob
+    capturedDataUrl.value = dataUrl
+  }
+  resetInactivityTimer()
+}
+
+async function retakePhoto() {
+  clearCapture()
+  resetInactivityTimer()
+  if (!mediaStream) {
+    const ok = await startFrontCamera()
+    if (!ok) {
+      await skipPhoto()
+    }
+  }
+}
+
+async function uploadCapturedPhoto(appointment: any): Promise<boolean> {
+  if (!capturedBlob.value || !appointment?.patient_id) return false
+
+  const body = new FormData()
+  body.append('file', capturedBlob.value, 'profile-photo.jpg')
+  body.append('patient_name', form.value.fullName.trim())
+  body.append('date_of_birth', form.value.dob)
+
+  try {
+    const res = await fetch(`/api/patients/${appointment.patient_id}/profile-photo/kiosk`, {
+      method: 'POST',
+      body,
+    })
+    return res.ok
+  } catch (e) {
+    console.error('Profile photo upload error:', e)
+    return false
+  }
+}
+
+async function usePhoto() {
+  if (!appointmentInfo.value) return
+  uploading.value = true
+  try {
+    // Upload failure must not block check-in
+    await uploadCapturedPhoto(appointmentInfo.value)
+    await completeCheckIn(appointmentInfo.value)
+  } finally {
+    uploading.value = false
+  }
+}
+
+async function skipPhoto() {
+  if (!appointmentInfo.value) {
+    goToSuccess(form.value.fullName.trim(), null)
+    return
+  }
+  uploading.value = true
+  try {
+    await completeCheckIn(appointmentInfo.value)
+  } finally {
+    uploading.value = false
   }
 }
 
@@ -245,6 +457,7 @@ onMounted(() => {
 onUnmounted(() => {
   stopCountdown()
   clearInactivityTimer()
+  stopCamera()
   globalThis.removeEventListener('mousemove', resetInactivityTimer)
   globalThis.removeEventListener('touchstart', resetInactivityTimer)
 })
@@ -271,6 +484,10 @@ onUnmounted(() => {
   width: 100%;
   text-align: center;
   animation: fadeSlideIn 0.3s ease-out;
+}
+
+.photo-card {
+  max-width: 640px;
 }
 
 @keyframes fadeSlideIn {
@@ -310,6 +527,38 @@ h2 {
   color: #546e7a;
   margin: 0 0 28px;
   line-height: 1.5;
+}
+
+/* ── Camera ────────────────────────────────────────────────────────────────── */
+.camera-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #0f172a;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+.camera-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.camera-preview.mirror {
+  transform: scaleX(-1);
+}
+
+.capture-canvas {
+  display: none;
+}
+
+.photo-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
 /* ── Buttons ───────────────────────────────────────────────────────────────── */
@@ -390,17 +639,6 @@ input {
 input:focus {
   outline: none;
   border-color: #3949ab;
-}
-
-.kiosk-error {
-  background: #fff3f3;
-  border: 1px solid #f5c6c6;
-  color: #c62828;
-  border-radius: 8px;
-  padding: 12px 16px;
-  margin-bottom: 18px;
-  font-size: 0.95rem;
-  line-height: 1.4;
 }
 
 /* ── Success card ──────────────────────────────────────────────────────────── */

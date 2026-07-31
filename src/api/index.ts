@@ -3,8 +3,6 @@
  * Handles all HTTP requests to the Python Flask backend
  */
 
-import bcryptjs from 'bcryptjs';
-
 const API_BASE_URL = (import.meta as any).env.VITE_API_URL || '';
 const API_REQUEST_TIMEOUT_MS = 15000;
 
@@ -71,19 +69,8 @@ async function request<T>(
  */
 export const authApi = {
   /**
-   * Get salt for a username (needed for client-side password hashing)
-   */
-  async getSalt(username: string) {
-    return request<{
-      salt: string;
-    }>('/api/auth/salt', {
-      method: 'POST',
-      body: JSON.stringify({ username }),
-    });
-  },
-
-  /**
-   * Login user with client-side hashed password
+   * Login user with plaintext password over HTTPS/TLS.
+   * Password verification is performed server-side.
    */
   async login(username: string, password: string): Promise<ApiResponse<{
     message: string;
@@ -96,31 +83,6 @@ export const authApi = {
     };
     requirePasswordChange?: boolean;
   }>> {
-    // Step 1: Get the bcrypt salt for this user
-    const saltResponse = await this.getSalt(username);
-    
-    if (saltResponse.error) {
-      return { error: saltResponse.error } as any;
-    }
-    
-    const bcryptSalt = saltResponse.data?.salt;
-    if (!bcryptSalt) {
-      return { error: 'Failed to retrieve salt for hashing' };
-    }
-    
-    // Step 2: Hash the password client-side using bcryptjs with the retrieved salt
-    // The bcryptSalt is a full bcrypt salt string (e.g., "$2a$10$...")
-    let hashedPassword: string;
-    try {
-      // bcryptjs.hash can use an existing salt by using it directly
-      // We use hashSync to get consistent behavior
-      hashedPassword = bcryptjs.hashSync(password, bcryptSalt);
-    } catch (error) {
-      console.error('Password hashing error:', error);
-      return { error: 'Failed to hash password - invalid salt' };
-    }
-    
-    // Step 3: Send the hashed password (plaintext password never leaves client)
     return request<{
       message: string;
       sessionToken: string;
@@ -133,7 +95,7 @@ export const authApi = {
       requirePasswordChange?: boolean;
     }>('/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ username, password: hashedPassword }),
+      body: JSON.stringify({ username, password }),
     });
   },
   
@@ -219,7 +181,330 @@ export const healthApi = {
   },
 };
 
+/**
+ * Patient properties (clinical notes) API
+ */
+export const patientPropertiesApi = {
+  async list(patientId: string) {
+    return request<{ properties: import('@/types').PatientProperty[] }>(
+      `/api/patient-properties/${patientId}`,
+      { method: 'GET' },
+    );
+  },
+
+  async create(patientId: string, payload: { name: string; description?: string }) {
+    return request<{ property: import('@/types').PatientProperty }>(
+      `/api/patient-properties/${patientId}`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  async update(
+    patientId: string,
+    propertyId: number,
+    payload: { name?: string; description?: string; updated_at?: string },
+  ) {
+    return request<{ property: import('@/types').PatientProperty }>(
+      `/api/patient-properties/${patientId}/${propertyId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  async delete(patientId: string, propertyId: number) {
+    return request<{ message: string }>(
+      `/api/patient-properties/${patientId}/${propertyId}`,
+      { method: 'DELETE' },
+    );
+  },
+};
+
+/**
+ * Provider chart API (allergies, medications, problems, summary)
+ */
+export const chartApi = {
+  async getSummary(patientId: string) {
+    return request<{ summary: import('@/types').ChartSummary }>(
+      `/api/chart/${patientId}/summary`,
+      { method: 'GET' },
+    );
+  },
+
+  async listAllergies(patientId: string) {
+    return request<{ allergies: import('@/types').Allergy[] }>(
+      `/api/chart/${patientId}/allergies`,
+      { method: 'GET' },
+    );
+  },
+
+  async createAllergy(
+    patientId: string,
+    payload: {
+      allergen: string
+      reaction?: string
+      severity?: import('@/types').AllergySeverity
+      status?: import('@/types').AllergyStatus
+      notes?: string
+    },
+  ) {
+    return request<{ allergy: import('@/types').Allergy }>(
+      `/api/chart/${patientId}/allergies`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    );
+  },
+
+  async updateAllergy(
+    patientId: string,
+    allergyId: string,
+    payload: Partial<{
+      allergen: string
+      reaction: string | null
+      severity: import('@/types').AllergySeverity
+      status: import('@/types').AllergyStatus
+      notes: string | null
+    }>,
+  ) {
+    return request<{ allergy: import('@/types').Allergy }>(
+      `/api/chart/${patientId}/allergies/${allergyId}`,
+      { method: 'PUT', body: JSON.stringify(payload) },
+    );
+  },
+
+  async deleteAllergy(patientId: string, allergyId: string) {
+    return request<{ message: string }>(
+      `/api/chart/${patientId}/allergies/${allergyId}`,
+      { method: 'DELETE' },
+    );
+  },
+
+  async listMedications(patientId: string) {
+    return request<{ medications: import('@/types').Medication[] }>(
+      `/api/chart/${patientId}/medications`,
+      { method: 'GET' },
+    );
+  },
+
+  async createMedication(
+    patientId: string,
+    payload: {
+      name: string
+      dosage?: string
+      frequency?: string
+      route?: string
+      status?: import('@/types').MedicationStatus
+      start_date?: string | null
+      end_date?: string | null
+      notes?: string
+    },
+  ) {
+    return request<{ medication: import('@/types').Medication }>(
+      `/api/chart/${patientId}/medications`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    );
+  },
+
+  async updateMedication(
+    patientId: string,
+    medicationId: string,
+    payload: Partial<{
+      name: string
+      dosage: string | null
+      frequency: string | null
+      route: string | null
+      status: import('@/types').MedicationStatus
+      start_date: string | null
+      end_date: string | null
+      notes: string | null
+    }>,
+  ) {
+    return request<{ medication: import('@/types').Medication }>(
+      `/api/chart/${patientId}/medications/${medicationId}`,
+      { method: 'PUT', body: JSON.stringify(payload) },
+    );
+  },
+
+  async deleteMedication(patientId: string, medicationId: string) {
+    return request<{ message: string }>(
+      `/api/chart/${patientId}/medications/${medicationId}`,
+      { method: 'DELETE' },
+    );
+  },
+
+  async listProblems(patientId: string) {
+    return request<{ problems: import('@/types').Problem[] }>(
+      `/api/chart/${patientId}/problems`,
+      { method: 'GET' },
+    );
+  },
+
+  async createProblem(
+    patientId: string,
+    payload: {
+      name: string
+      status?: import('@/types').ProblemStatus
+      onset_date?: string | null
+      resolved_date?: string | null
+      notes?: string
+    },
+  ) {
+    return request<{ problem: import('@/types').Problem }>(
+      `/api/chart/${patientId}/problems`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    );
+  },
+
+  async updateProblem(
+    patientId: string,
+    problemId: string,
+    payload: Partial<{
+      name: string
+      status: import('@/types').ProblemStatus
+      onset_date: string | null
+      resolved_date: string | null
+      notes: string | null
+    }>,
+  ) {
+    return request<{ problem: import('@/types').Problem }>(
+      `/api/chart/${patientId}/problems/${problemId}`,
+      { method: 'PUT', body: JSON.stringify(payload) },
+    );
+  },
+
+  async deleteProblem(patientId: string, problemId: string) {
+    return request<{ message: string }>(
+      `/api/chart/${patientId}/problems/${problemId}`,
+      { method: 'DELETE' },
+    );
+  },
+};
+
+/**
+ * Documents API helpers (visibility toggle)
+ */
+export const documentsApi = {
+  async setVisibility(docId: string, patientVisible: boolean) {
+    return request<{ document: import('@/types').PatientDocument; message: string }>(
+      `/api/documents/${docId}/visibility`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ patient_visible: patientVisible }),
+      },
+    );
+  },
+};
+
+/**
+ * In-app messaging API (DMs, channels, threads)
+ */
+export const messagesApi = {
+  async listConversations() {
+    return request<{ conversations: import('@/types').Conversation[] }>(
+      '/api/conversations',
+      { method: 'GET' },
+    );
+  },
+
+  async getUnreadCount() {
+    return request<{ unread_count: number }>(
+      '/api/conversations/unread-count',
+      { method: 'GET' },
+    );
+  },
+
+  async listContacts() {
+    return request<{ contacts: import('@/types').MessagingContact[] }>(
+      '/api/conversations/contacts',
+      { method: 'GET' },
+    );
+  },
+
+  async createConversation(payload: {
+    type: 'dm' | 'channel';
+    participant_user_id?: string;
+    title?: string;
+    participant_user_ids?: string[];
+  }) {
+    return request<{
+      conversation: import('@/types').Conversation;
+      created: boolean;
+    }>('/api/conversations', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async getConversation(conversationId: string) {
+    return request<{ conversation: import('@/types').Conversation }>(
+      `/api/conversations/${conversationId}`,
+      { method: 'GET' },
+    );
+  },
+
+  async listMessages(
+    conversationId: string,
+    options: {
+      limit?: number;
+      before?: string;
+      since?: string;
+      parent_message_id?: string;
+      top_level_only?: boolean;
+    } = {},
+  ) {
+    const params = new URLSearchParams();
+    if (options.limit) params.set('limit', String(options.limit));
+    if (options.before) params.set('before', options.before);
+    if (options.since) params.set('since', options.since);
+    if (options.parent_message_id) params.set('parent_message_id', options.parent_message_id);
+    if (options.top_level_only === false) params.set('top_level_only', 'false');
+    const query = params.toString();
+    return request<{ messages: import('@/types').ChatMessage[]; has_more: boolean }>(
+      `/api/conversations/${conversationId}/messages${query ? `?${query}` : ''}`,
+      { method: 'GET' },
+    );
+  },
+
+  async sendMessage(
+    conversationId: string,
+    payload: { body: string; parent_message_id?: string },
+  ) {
+    return request<{ message: import('@/types').ChatMessage }>(
+      `/api/conversations/${conversationId}/messages`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  async markRead(conversationId: string) {
+    return request<{ message: string; unread_count: number; read_at: string }>(
+      `/api/conversations/${conversationId}/read`,
+      { method: 'PATCH' },
+    );
+  },
+
+  async addParticipants(conversationId: string, participantUserIds: string[]) {
+    return request<{
+      message: string;
+      added_user_ids: string[];
+      participants: import('@/types').ConversationParticipant[];
+    }>(`/api/conversations/${conversationId}/participants`, {
+      method: 'POST',
+      body: JSON.stringify({ participant_user_ids: participantUserIds }),
+    });
+  },
+};
+
 export default {
   auth: authApi,
   health: healthApi,
+  patientProperties: patientPropertiesApi,
+  chart: chartApi,
+  documents: documentsApi,
+  messages: messagesApi,
 };
