@@ -21,6 +21,22 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Upgrade legacy users tables that predate lockout / password-policy columns.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS account_locked_until TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_failed_login TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_last_changed TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    id TEXT PRIMARY KEY,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS patients (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
@@ -107,6 +123,30 @@ CREATE TABLE IF NOT EXISTS medical_documents (
 
 ALTER TABLE medical_documents
     ADD COLUMN IF NOT EXISTS patient_visible BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- One-time: documents that existed before patient_visible were always patient-accessible.
+-- New uploads still default to FALSE in the application layer.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM schema_migrations
+        WHERE id = 'medical_documents_patient_visible_legacy_backfill'
+    ) THEN
+        UPDATE medical_documents
+        SET patient_visible = TRUE
+        WHERE patient_visible = FALSE
+          AND document_type IS DISTINCT FROM 'profile_photo';
+
+        -- Keep the seeded provider-only sample hidden after the legacy restore.
+        UPDATE medical_documents
+        SET patient_visible = FALSE
+        WHERE title = 'Internal Chart Review Notes'
+          AND description = 'Provider-only clinical notes';
+
+        INSERT INTO schema_migrations (id)
+        VALUES ('medical_documents_patient_visible_legacy_backfill');
+    END IF;
+END $$;
 
 -- Profile photos are stored as medical_documents rows (document_type = 'profile_photo')
 -- and pointed to from patients; excluded from document list APIs.

@@ -41,7 +41,21 @@ def _is_undefined_column_error(exc):
     return isinstance(exc, pg_errors.UndefinedColumn)
 
 
+def _schema_incomplete_login_response():
+    return jsonify({
+        'error': (
+            'Authentication database schema is incomplete. '
+            'Apply database migrations and try again.'
+        ),
+    }), 503
+
+
 def _fetch_login_user(username):
+    """
+    Fetch login user including lockout columns.
+
+    Fail closed if auth columns are missing — never weaken lockout / is_active.
+    """
     query = """
         SELECT id, username, email, role, password_hash, salt,
                failed_login_attempts, account_locked_until, is_active,
@@ -51,32 +65,15 @@ def _fetch_login_user(username):
     """
     try:
         user = execute_query(query, (username,), fetch_one=True)
-        if user:
-            user = dict(user)
-            user['_supports_lockout_columns'] = True
-        return user
+        return dict(user) if user else None
     except Exception as exc:
         if not _is_undefined_column_error(exc):
             raise
-        current_app.logger.warning(
-            "Users table missing one or more auth columns during login; using compatibility query"
+        current_app.logger.error(
+            "Users table missing auth/lockout columns during login; refusing login"
         )
-        fallback_query = """
-            SELECT id, username, email, role, password_hash, salt
-            FROM users
-            WHERE username = %s
-        """
-        user = execute_query(fallback_query, (username,), fetch_one=True)
-        if not user:
-            return None
-        user = dict(user)
-        user['failed_login_attempts'] = 0
-        user['account_locked_until'] = None
-        user['is_active'] = True
-        user['password_last_changed'] = None
-        user['must_change_password'] = False
-        user['_supports_lockout_columns'] = False
-        return user
+        # Signal to login() via sentinel that schema is incomplete.
+        return {'_schema_incomplete': True}
 
 
 def _verify_login_password(submitted_password, user):
@@ -214,6 +211,9 @@ def login():
         
         # Get user
         user = _fetch_login_user(username)
+
+        if user and user.get('_schema_incomplete'):
+            return _schema_incomplete_login_response()
         
         if not user:
             log_login(None, username, False, request)
@@ -228,57 +228,52 @@ def login():
         valid_password = _verify_login_password(password, user)
         
         if not valid_password:
-            if user.get('_supports_lockout_columns'):
-                # Increment failed login attempts
-                max_attempts = int(os.getenv('MAX_LOGIN_ATTEMPTS', 5))
-                lockout_minutes = int(os.getenv('ACCOUNT_LOCKOUT_MINUTES', 30))
-                new_attempts = (user['failed_login_attempts'] or 0) + 1
+            # Increment failed login attempts
+            max_attempts = int(os.getenv('MAX_LOGIN_ATTEMPTS', 5))
+            lockout_minutes = int(os.getenv('ACCOUNT_LOCKOUT_MINUTES', 30))
+            new_attempts = (user['failed_login_attempts'] or 0) + 1
 
-                if new_attempts >= max_attempts:
-                    lockout_until = datetime.now() + timedelta(minutes=lockout_minutes)
-
-                    update_query = """
-                        UPDATE users
-                        SET failed_login_attempts = %s,
-                            account_locked_until = %s,
-                            last_failed_login = NOW()
-                        WHERE id = %s
-                    """
-                    execute_query(update_query, (new_attempts, lockout_until, user['id']))
-
-                    log_account_lockout(user['id'], 'Too many failed login attempts', request)
-
-                    return jsonify({
-                        'error': 'Account locked due to too many failed login attempts',
-                        'minutesLocked': lockout_minutes
-                    }), 423
+            if new_attempts >= max_attempts:
+                lockout_until = datetime.now() + timedelta(minutes=lockout_minutes)
 
                 update_query = """
                     UPDATE users
                     SET failed_login_attempts = %s,
+                        account_locked_until = %s,
                         last_failed_login = NOW()
                     WHERE id = %s
                 """
-                execute_query(update_query, (new_attempts, user['id']))
+                execute_query(update_query, (new_attempts, lockout_until, user['id']))
 
-                log_login(user['id'], username, False, request)
+                log_account_lockout(user['id'], 'Too many failed login attempts', request)
 
                 return jsonify({
-                    'error': 'Invalid credentials',
-                    'attemptsRemaining': max_attempts - new_attempts
-                }), 401
+                    'error': 'Account locked due to too many failed login attempts',
+                    'minutesLocked': lockout_minutes
+                }), 423
 
-            log_login(user['id'], username, False, request)
-            return jsonify({'error': 'Invalid credentials'}), 401
-        
-        # Reset failed login attempts
-        if user.get('_supports_lockout_columns'):
-            reset_query = """
+            update_query = """
                 UPDATE users
-                SET failed_login_attempts = 0, account_locked_until = NULL, last_login = NOW()
+                SET failed_login_attempts = %s,
+                    last_failed_login = NOW()
                 WHERE id = %s
             """
-            execute_query(reset_query, (user['id'],))
+            execute_query(update_query, (new_attempts, user['id']))
+
+            log_login(user['id'], username, False, request)
+
+            return jsonify({
+                'error': 'Invalid credentials',
+                'attemptsRemaining': max_attempts - new_attempts
+            }), 401
+        
+        # Reset failed login attempts
+        reset_query = """
+            UPDATE users
+            SET failed_login_attempts = 0, account_locked_until = NULL, last_login = NOW()
+            WHERE id = %s
+        """
+        execute_query(reset_query, (user['id'],))
         
         # Check if password has expired
         password_expiry_days = int(os.getenv('PASSWORD_EXPIRY_DAYS', 90))

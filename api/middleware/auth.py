@@ -49,7 +49,7 @@ def authenticate(f):
         if not session:
             return jsonify({'error': 'Invalid or expired session'}), 401
         
-        # Get user details
+        # Get user details — require is_active (fail closed if column missing).
         query = """
             SELECT id, username, role, email
             FROM users
@@ -58,16 +58,9 @@ def authenticate(f):
         try:
             user = execute_query(query, (session['user_id'],), fetch_one=True)
         except Exception as exc:
-            if isinstance(exc, pg_errors.UndefinedTable):
+            if isinstance(exc, (pg_errors.UndefinedTable, pg_errors.UndefinedColumn)):
                 return _schema_not_initialized_response()
-            if not isinstance(exc, pg_errors.UndefinedColumn):
-                raise
-            fallback_query = """
-                SELECT id, username, role, email
-                FROM users
-                WHERE id = %s
-            """
-            user = execute_query(fallback_query, (session['user_id'],), fetch_one=True)
+            raise
         
         if not user:
             return jsonify({'error': 'User not found or inactive'}), 401
@@ -117,11 +110,9 @@ def check_account_lock(f):
         try:
             result = execute_query(query, (username,), fetch_one=True)
         except Exception as exc:
-            if isinstance(exc, pg_errors.UndefinedTable):
+            if isinstance(exc, (pg_errors.UndefinedTable, pg_errors.UndefinedColumn)):
                 return _schema_not_initialized_response()
-            if not isinstance(exc, pg_errors.UndefinedColumn):
-                raise
-            result = None
+            raise
         
         if result and result['account_locked_until']:
             lockout_time = result['account_locked_until']

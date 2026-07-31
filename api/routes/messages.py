@@ -212,6 +212,41 @@ def _can_message_user(actor, target_user_id):
     return False
 
 
+def _patient_user_ids(user_ids):
+    """Return the subset of user_ids that belong to active patient accounts."""
+    ids = [str(uid) for uid in user_ids if uid]
+    if not ids:
+        return set()
+    placeholders = ','.join(['%s'] * len(ids))
+    rows = execute_query(
+        f"""
+        SELECT id
+        FROM users
+        WHERE role = 'patient'
+          AND id IN ({placeholders})
+        """,
+        tuple(ids),
+        fetch_all=True,
+    ) or []
+    return {str(row['id']) for row in rows}
+
+
+def _channel_patient_ids(conversation_id):
+    """Return patient user IDs already participating in a channel."""
+    rows = execute_query(
+        """
+        SELECT u.id
+        FROM conversation_participants cp
+        JOIN users u ON u.id = cp.user_id
+        WHERE cp.conversation_id = %s
+          AND u.role = 'patient'
+        """,
+        (conversation_id,),
+        fetch_all=True,
+    ) or []
+    return {str(row['id']) for row in rows}
+
+
 def _list_participants(conversation_id):
     rows = execute_query(
         """
@@ -528,6 +563,12 @@ def create_conversation():
                     return jsonify({'error': f'Cannot add participant {raw_id}'}), 403
                 resolved_ids.add(str(raw_id))
 
+            # HIPAA: at most one patient per channel so patients cannot see each other.
+            if len(_patient_user_ids(resolved_ids)) > 1:
+                return jsonify({
+                    'error': 'Channels may include at most one patient',
+                }), 400
+
             with DatabaseTransaction() as cursor:
                 cursor.execute(
                     """
@@ -813,6 +854,14 @@ def add_participants(conversation_id):
         participant_ids = data.get('participant_user_ids') or []
         if not isinstance(participant_ids, list) or not participant_ids:
             return jsonify({'error': 'participant_user_ids is required'}), 400
+
+        # HIPAA: reject adding a second patient to a channel that already has one.
+        existing_patients = _channel_patient_ids(conversation_id)
+        new_patients = _patient_user_ids(participant_ids)
+        if len(existing_patients | new_patients) > 1:
+            return jsonify({
+                'error': 'Channels may include at most one patient',
+            }), 400
 
         added = []
         with DatabaseTransaction() as cursor:

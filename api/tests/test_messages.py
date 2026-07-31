@@ -134,6 +134,51 @@ def test_doctor_can_create_channel_and_non_participant_cannot_read(client):
 
 
 @requires_db
+def test_channel_rejects_second_patient_participant(client):
+    """HIPAA: channels may include at most one patient."""
+    doctor_headers = login_as(client, 'doctor1')
+    patient1_id = _user_id('patient1')
+    patient2_id = _user_id('patient2')
+
+    multi_create = client.post(
+        '/api/conversations',
+        headers=doctor_headers,
+        json={
+            'type': 'channel',
+            'title': 'Multi Patient Blocked',
+            'participant_user_ids': [patient1_id, patient2_id],
+        },
+    )
+    assert multi_create.status_code == 400, multi_create.get_json()
+    assert 'at most one patient' in multi_create.get_json()['error'].lower()
+
+    create_response = client.post(
+        '/api/conversations',
+        headers=doctor_headers,
+        json={
+            'type': 'channel',
+            'title': 'Single Patient Channel',
+            'participant_user_ids': [patient1_id],
+        },
+    )
+    assert create_response.status_code == 201, create_response.get_json()
+    conversation_id = create_response.get_json()['conversation']['id']
+
+    add_response = client.post(
+        f'/api/conversations/{conversation_id}/participants',
+        headers=doctor_headers,
+        json={'participant_user_ids': [patient2_id]},
+    )
+    assert add_response.status_code == 400, add_response.get_json()
+    assert 'at most one patient' in add_response.get_json()['error'].lower()
+
+    execute_query(
+        "DELETE FROM conversations WHERE id = %s",
+        (conversation_id,),
+    )
+
+
+@requires_db
 def test_unread_count_updates_after_read(client):
     doctor_headers = login_as(client, 'doctor1')
     patient_headers = login_as(client, 'patient1', 'Patient123!')

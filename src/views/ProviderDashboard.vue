@@ -599,6 +599,23 @@ function layoutProviderEvents(providerEvents: DashboardEvent[]): LaidOutEvent[] 
     return []
   }
 
+  // All-day events render full-width behind timed blocks and must not
+  // participate in overlap clustering (they would collapse every lane).
+  const allDayLayouts: LaidOutEvent[] = visible
+    .filter((item) => item.event.is_all_day)
+    .map((item) => ({
+      event: item.event,
+      lane: 0,
+      laneCount: 1,
+      visibleStart: item.visibleStart,
+      visibleEnd: item.visibleEnd
+    }))
+
+  const timed = visible.filter((item) => !item.event.is_all_day)
+  if (timed.length === 0) {
+    return allDayLayouts
+  }
+
   const laneEnds: number[] = []
   const provisional: Array<{
     event: DashboardEvent
@@ -607,7 +624,7 @@ function layoutProviderEvents(providerEvents: DashboardEvent[]): LaidOutEvent[] 
     lane: number
   }> = []
 
-  for (const item of visible) {
+  for (const item of timed) {
     let lane = laneEnds.findIndex((end) => end <= item.visibleStart)
     if (lane === -1) {
       lane = laneEnds.length
@@ -619,7 +636,7 @@ function layoutProviderEvents(providerEvents: DashboardEvent[]): LaidOutEvent[] 
   }
 
   // Within each overlapping cluster, laneCount is the max lane index + 1.
-  return provisional.map((item) => {
+  const timedLayouts = provisional.map((item) => {
     const cluster = new Set<string>([item.event.id])
     let changed = true
     while (changed) {
@@ -658,6 +675,8 @@ function layoutProviderEvents(providerEvents: DashboardEvent[]): LaidOutEvent[] 
       visibleEnd: item.visibleEnd
     }
   })
+
+  return [...allDayLayouts, ...timedLayouts]
 }
 
 function getEventTimeLabel(event: DashboardEvent): string {

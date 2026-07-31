@@ -129,6 +129,52 @@ def test_profile_photo_excluded_from_document_list(client):
 
 
 @requires_db
+def test_profile_photo_not_mutable_via_generic_document_apis(client):
+    patient = _get_patient('patient1')
+    upload = _upload_kiosk_photo(client, patient)
+    assert upload.status_code == 201, upload.get_json()
+
+    photo = execute_query(
+        """
+        SELECT id
+        FROM medical_documents
+        WHERE patient_id = %s AND document_type = 'profile_photo'
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        (patient['id'],),
+        fetch_one=True,
+    )
+    assert photo is not None
+    doc_id = str(photo['id'])
+    doctor_headers = login_as(client, 'doctor1')
+
+    rename = client.put(
+        f'/api/documents/{doc_id}/rename',
+        headers=doctor_headers,
+        json={'title': 'Should Not Rename'},
+    )
+    assert rename.status_code == 404
+
+    visibility = client.put(
+        f'/api/documents/{doc_id}/visibility',
+        headers=doctor_headers,
+        json={'patient_visible': False},
+    )
+    assert visibility.status_code == 404
+
+    delete = client.delete(f'/api/documents/{doc_id}', headers=doctor_headers)
+    assert delete.status_code == 404
+
+    still_there = execute_query(
+        "SELECT id FROM medical_documents WHERE id = %s",
+        (doc_id,),
+        fetch_one=True,
+    )
+    assert still_there is not None
+
+
+@requires_db
 def test_kiosk_profile_photo_rejects_non_jpeg(client):
     patient = _get_patient('patient1')
     data = {

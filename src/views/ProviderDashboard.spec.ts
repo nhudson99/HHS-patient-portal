@@ -277,6 +277,79 @@ describe('ProviderDashboard.vue', () => {
     expect(block.attributes('style')).toContain('height: 936px')
   })
 
+  it('does not squeeze timed appointments when an all-day event is present', async () => {
+    const today = getLocalDateString(new Date())
+    vi.stubGlobal(
+      'fetch',
+      mockFetch({
+        doctors: [{ id: 'doc-1', first_name: 'Alice', last_name: 'Smith' }],
+        events: [
+          {
+            id: 'all-day',
+            doctor_id: 'doc-1',
+            event_type: 'meeting',
+            title: 'Clinic Closed',
+            event_date: today,
+            color: '#f59e0b',
+            is_all_day: true,
+            provider_name: 'Alice Smith',
+            is_own_event: true,
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z'
+          },
+          {
+            id: 'timed-a',
+            doctor_id: 'doc-1',
+            event_type: 'appointment',
+            title: 'Patient A',
+            patient_name: 'Patient A',
+            event_date: today,
+            start_time: '09:00:00',
+            end_time: '09:30:00',
+            color: '#3b82f6',
+            is_all_day: false,
+            provider_name: 'Alice Smith',
+            is_own_event: true,
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z'
+          },
+          {
+            id: 'timed-b',
+            doctor_id: 'doc-1',
+            event_type: 'appointment',
+            title: 'Patient B',
+            patient_name: 'Patient B',
+            event_date: today,
+            start_time: '11:00:00',
+            end_time: '11:30:00',
+            color: '#10b981',
+            is_all_day: false,
+            provider_name: 'Alice Smith',
+            is_own_event: true,
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z'
+          }
+        ]
+      })
+    )
+
+    const wrapper = mount(ProviderDashboard)
+    await flushPromises()
+
+    const allDay = wrapper.find('.schedule-block--all-day')
+    expect(allDay.exists()).toBe(true)
+    expect(allDay.attributes('style')).toContain('width: calc(100% - 4px)')
+
+    const timedBlocks = wrapper
+      .findAll('.schedule-block')
+      .filter((block) => !block.classes().includes('schedule-block--all-day'))
+    expect(timedBlocks.length).toBe(2)
+    for (const block of timedBlocks) {
+      expect(block.attributes('style')).toContain('width: calc(100% - 4px)')
+      expect(block.attributes('style')).toContain('left: calc(0% + 2px)')
+    }
+  })
+
   it('lays overlapping events into side-by-side lanes', async () => {
     const today = getLocalDateString(new Date())
     vi.stubGlobal(
