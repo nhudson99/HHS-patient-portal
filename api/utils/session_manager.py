@@ -113,6 +113,22 @@ def invalidate_all_user_sessions(user_id):
     
     execute_query(query, (user_id,))
 
+
+def invalidate_other_user_sessions(user_id, except_token):
+    """
+    Invalidate all sessions for a user except the current one.
+
+    Used after password change so other devices are forced to re-login
+    without kicking out the session that just completed the change.
+    """
+    query = """
+        DELETE FROM user_sessions
+        WHERE user_id = %s
+          AND session_token <> %s
+    """
+    execute_query(query, (user_id, except_token))
+
+
 def cleanup_expired_sessions():
     """Clean up expired sessions"""
     query = """

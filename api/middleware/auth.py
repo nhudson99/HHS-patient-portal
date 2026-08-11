@@ -6,10 +6,17 @@ HIPAA Compliance: Ensures only authenticated users can access PHI
 from functools import wraps
 from flask import request, jsonify
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from psycopg2 import errors as pg_errors
 from api.utils.session_manager import validate_session
 from api.db.connection import execute_query
+
+# Endpoints allowed while a password change is required.
+_PASSWORD_CHANGE_ALLOWED_PATHS = {
+    '/api/auth/change-password',
+    '/api/auth/logout',
+    '/api/auth/me',
+}
 
 
 def _schema_not_initialized_response():
@@ -22,6 +29,19 @@ def _comparison_now(reference_dt):
     if reference_dt and reference_dt.tzinfo and reference_dt.tzinfo.utcoffset(reference_dt) is not None:
         return datetime.now(timezone.utc)
     return datetime.now()
+
+
+def _password_change_required(user: dict) -> bool:
+    if user.get('must_change_password'):
+        return True
+
+    password_last_changed = user.get('password_last_changed')
+    if not password_last_changed:
+        return False
+
+    password_expiry_days = int(os.getenv('PASSWORD_EXPIRY_DAYS', 90))
+    expiry_date = password_last_changed + timedelta(days=password_expiry_days)
+    return _comparison_now(expiry_date) > expiry_date
 
 
 def authenticate(f):
@@ -51,7 +71,7 @@ def authenticate(f):
         
         # Get user details — require is_active (fail closed if column missing).
         query = """
-            SELECT id, username, role, email
+            SELECT id, username, role, email, must_change_password, password_last_changed
             FROM users
             WHERE id = %s AND is_active = true
         """
@@ -64,10 +84,23 @@ def authenticate(f):
         
         if not user:
             return jsonify({'error': 'User not found or inactive'}), 401
-        
+
+        user_data = dict(user)
+        require_password_change = _password_change_required(user_data)
+        user_data['requirePasswordChange'] = require_password_change
+        # Keep response payloads tidy — callers use requirePasswordChange.
+        user_data.pop('must_change_password', None)
+        user_data.pop('password_last_changed', None)
+
         # Attach user to request context
-        request.user = dict(user)
+        request.user = user_data
         request.session_token = session_token
+
+        if require_password_change and request.path not in _PASSWORD_CHANGE_ALLOWED_PATHS:
+            return jsonify({
+                'error': 'Password change required',
+                'code': 'PASSWORD_CHANGE_REQUIRED',
+            }), 403
         
         return f(*args, **kwargs)
     

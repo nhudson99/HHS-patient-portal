@@ -27,6 +27,7 @@ from functools import wraps
 import jwt
 from jwt import PyJWKClient, PyJWKClientError
 import bcrypt
+from psycopg2 import errors as pg_errors
 
 from api.db.connection import execute_query, DatabaseTransaction
 
@@ -251,6 +252,32 @@ def _build_password_hash(password: str) -> tuple[str, str]:
     return password_hash, salt
 
 
+def _required_fields(data: dict, fields: list[str]) -> tuple[dict[str, str] | None, str | None]:
+    """Strip required fields; return cleaned map or an error message."""
+    cleaned: dict[str, str] = {}
+    for field in fields:
+        value = _clean_text(data.get(field))
+        if not value:
+            return None, f'Missing required field: {field}'
+        cleaned[field] = value
+    return cleaned, None
+
+
+def _username_or_email_taken(username: str, email: str) -> bool:
+    existing = execute_query(
+        "SELECT id FROM users WHERE username = %s OR email = %s",
+        (username, email),
+        fetch_one=True,
+    )
+    return bool(existing)
+
+
+def _is_unique_violation(exc: BaseException) -> bool:
+    return isinstance(exc, pg_errors.UniqueViolation) or (
+        hasattr(exc, 'pgcode') and getattr(exc, 'pgcode', None) == '23505'
+    )
+
+
 @admin_bp.route('/verify-token', methods=['POST'])
 def verify_token():
     """
@@ -311,50 +338,66 @@ def list_admin_doctors():
 def create_doctor():
     data = request.get_json(silent=True) or {}
     required = ['username', 'email', 'firstName', 'lastName', 'specialty', 'licenseNumber']
-    if not all(data.get(field) for field in required):
-        return jsonify({'error': 'Missing required provider fields'}), 400
+    cleaned, field_error = _required_fields(data, required)
+    if field_error:
+        return jsonify({'error': field_error}), 400
+
+    username = cleaned['username']
+    email = cleaned['email'].lower()
+    is_active = bool(data.get('isActive', True))
+
+    if _username_or_email_taken(username, email):
+        return jsonify({'error': 'Username or email already in use'}), 409
 
     temp_password = _generate_temp_password()
     password_hash, salt = _build_password_hash(temp_password)
 
-    with DatabaseTransaction() as cursor:
-        cursor.execute(
-            """
-            INSERT INTO users (username, email, password_hash, salt, role, must_change_password)
-            VALUES (%s, %s, %s, %s, 'doctor', true)
-            RETURNING id, username, email, role
-            """,
-            (data['username'].strip(), data['email'].strip().lower(), password_hash, salt),
-        )
-        user = cursor.fetchone()
-
-        cursor.execute(
-            """
-            INSERT INTO doctors (
-                user_id, first_name, last_name, specialty, license_number,
-                license_state, phone, office_address
+    try:
+        with DatabaseTransaction() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO users (
+                    username, email, password_hash, salt, role,
+                    must_change_password, is_active
+                )
+                VALUES (%s, %s, %s, %s, 'doctor', true, %s)
+                RETURNING id, username, email, role, is_active
+                """,
+                (username, email, password_hash, salt, is_active),
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id, user_id, first_name, last_name, specialty, license_number,
-                      license_state, phone, office_address, created_at, updated_at
-            """,
-            (
-                user['id'],
-                data['firstName'].strip(),
-                data['lastName'].strip(),
-                data['specialty'].strip(),
-                data['licenseNumber'].strip(),
-                (data.get('licenseState') or '').strip() or None,
-                (data.get('phone') or '').strip() or None,
-                (data.get('officeAddress') or '').strip() or None,
-            ),
-        )
-        doctor = cursor.fetchone()
+            user = cursor.fetchone()
+
+            cursor.execute(
+                """
+                INSERT INTO doctors (
+                    user_id, first_name, last_name, specialty, license_number,
+                    license_state, phone, office_address
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, user_id, first_name, last_name, specialty, license_number,
+                          license_state, phone, office_address, created_at, updated_at
+                """,
+                (
+                    user['id'],
+                    cleaned['firstName'],
+                    cleaned['lastName'],
+                    cleaned['specialty'],
+                    cleaned['licenseNumber'],
+                    (data.get('licenseState') or '').strip() or None,
+                    (data.get('phone') or '').strip() or None,
+                    (data.get('officeAddress') or '').strip() or None,
+                ),
+            )
+            doctor = cursor.fetchone()
+    except Exception as exc:
+        if _is_unique_violation(exc):
+            return jsonify({'error': 'Username or email already in use'}), 409
+        raise
 
     payload = dict(doctor)
     payload['username'] = user['username']
     payload['email'] = user['email']
-    payload['is_active'] = True
+    payload['is_active'] = user['is_active']
 
     return jsonify({
         'doctor': _serialize_rows([payload])[0],
@@ -468,42 +511,61 @@ def list_admin_patients():
 def create_patient():
     data = request.get_json(silent=True) or {}
     required = ['username', 'email', 'firstName', 'lastName']
-    if not all(data.get(field) for field in required):
-        return jsonify({'error': 'Missing required patient fields'}), 400
+    cleaned, field_error = _required_fields(data, required)
+    if field_error:
+        return jsonify({'error': field_error}), 400
+
+    username = cleaned['username']
+    email = cleaned['email'].lower()
+    is_active = bool(data.get('isActive', True))
+
+    # Merge cleaned required fields so insert helpers see stripped values.
+    data = {**data, **cleaned, 'email': email}
+
+    if _username_or_email_taken(username, email):
+        return jsonify({'error': 'Username or email already in use'}), 409
 
     temp_password = _generate_temp_password()
     password_hash, salt = _build_password_hash(temp_password)
 
-    with DatabaseTransaction() as cursor:
-        cursor.execute(
-            """
-            INSERT INTO users (username, email, password_hash, salt, role, must_change_password)
-            VALUES (%s, %s, %s, %s, 'patient', true)
-            RETURNING id, username, email, role
-            """,
-            (_clean_data_value(data, 'username'), _clean_data_value(data, 'email').lower(), password_hash, salt),
-        )
-        user = cursor.fetchone()
-
-        cursor.execute(
-            """
-            INSERT INTO patients (
-                user_id, first_name, last_name, date_of_birth, phone, address, city,
-                state, zip_code, emergency_contact_name, emergency_contact_phone
+    try:
+        with DatabaseTransaction() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO users (
+                    username, email, password_hash, salt, role,
+                    must_change_password, is_active
+                )
+                VALUES (%s, %s, %s, %s, 'patient', true, %s)
+                RETURNING id, username, email, role, is_active
+                """,
+                (username, email, password_hash, salt, is_active),
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id, user_id, first_name, last_name, date_of_birth, phone,
-                      address, city, state, zip_code, emergency_contact_name,
-                      emergency_contact_phone, created_at, updated_at
-            """,
-            _build_patient_insert_values(data, user['id']),
-        )
-        patient = cursor.fetchone()
+            user = cursor.fetchone()
+
+            cursor.execute(
+                """
+                INSERT INTO patients (
+                    user_id, first_name, last_name, date_of_birth, phone, address, city,
+                    state, zip_code, emergency_contact_name, emergency_contact_phone
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, user_id, first_name, last_name, date_of_birth, phone,
+                          address, city, state, zip_code, emergency_contact_name,
+                          emergency_contact_phone, created_at, updated_at
+                """,
+                _build_patient_insert_values(data, user['id']),
+            )
+            patient = cursor.fetchone()
+    except Exception as exc:
+        if _is_unique_violation(exc):
+            return jsonify({'error': 'Username or email already in use'}), 409
+        raise
 
     payload = dict(patient)
     payload['username'] = user['username']
     payload['email'] = user['email']
-    payload['is_active'] = True
+    payload['is_active'] = user['is_active']
 
     return jsonify({
         'patient': _serialize_rows([payload])[0],

@@ -15,7 +15,7 @@ from api.utils.security import (
     verify_password, validate_password_strength
 )
 from api.utils.session_manager import (
-    create_session, invalidate_session, invalidate_all_user_sessions
+    create_session, invalidate_session, invalidate_other_user_sessions
 )
 from api.utils.audit_log import (
     log_login, log_logout, log_password_change,
@@ -397,8 +397,9 @@ def change_password():
         """
         execute_query(update_query, (new_password_hash, new_salt_str, request.user['id']))
         
-        # Invalidate all other sessions (force re-login on other devices)
-        invalidate_all_user_sessions(request.user['id'])
+        # Invalidate other sessions (force re-login on other devices), keep current.
+        if hasattr(request, 'session_token') and request.session_token:
+            invalidate_other_user_sessions(request.user['id'], request.session_token)
         
         log_password_change(request.user['id'], False, request)
         
@@ -437,7 +438,14 @@ def get_current_user():
     Get current user information
     """
     try:
-        return jsonify({'user': request.user}), 200
+        user = dict(request.user)
+        # Serialize UUID ids for JSON clients.
+        if 'id' in user:
+            user['id'] = str(user['id'])
+        return jsonify({
+            'user': user,
+            'requirePasswordChange': bool(user.get('requirePasswordChange')),
+        }), 200
     except Exception as e:
         current_app.logger.exception("Get user error")
         return jsonify({'error': 'Failed to get user information'}), 500

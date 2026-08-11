@@ -101,14 +101,26 @@
             </div>
           </form>
 
-          <div v-if="newProviderPassword" class="temp-password">
-            Temporary provider password: <strong>{{ newProviderPassword }}</strong>
+          <div v-if="newProviderCredentials" class="temp-password">
+            <div class="temp-password-text">
+              Provider created. Username: <strong>{{ newProviderCredentials.username }}</strong>
+              — temporary password: <strong>{{ newProviderCredentials.password }}</strong>
+            </div>
+            <div class="temp-password-actions">
+              <button type="button" class="section-btn secondary" @click="copyText(newProviderCredentials.password)">
+                Copy password
+              </button>
+              <button type="button" class="section-btn secondary" @click="newProviderCredentials = null">
+                Dismiss
+              </button>
+            </div>
           </div>
 
           <div class="table-wrap">
             <table class="entity-table">
               <thead>
                 <tr>
+                  <th>Username</th>
                   <th>Name</th>
                   <th>Email</th>
                   <th>Specialty</th>
@@ -119,6 +131,7 @@
               </thead>
               <tbody>
                 <tr v-for="provider in providers" :key="provider.id">
+                  <td>{{ provider.username || '—' }}</td>
                   <td>{{ provider.first_name }} {{ provider.last_name }}</td>
                   <td>{{ provider.email }}</td>
                   <td>{{ provider.specialty }}</td>
@@ -169,14 +182,26 @@
             </div>
           </form>
 
-          <div v-if="newPatientPassword" class="temp-password">
-            Temporary patient password: <strong>{{ newPatientPassword }}</strong>
+          <div v-if="newPatientCredentials" class="temp-password">
+            <div class="temp-password-text">
+              Patient created. Username: <strong>{{ newPatientCredentials.username }}</strong>
+              — temporary password: <strong>{{ newPatientCredentials.password }}</strong>
+            </div>
+            <div class="temp-password-actions">
+              <button type="button" class="section-btn secondary" @click="copyText(newPatientCredentials.password)">
+                Copy password
+              </button>
+              <button type="button" class="section-btn secondary" @click="newPatientCredentials = null">
+                Dismiss
+              </button>
+            </div>
           </div>
 
           <div class="table-wrap">
             <table class="entity-table">
               <thead>
                 <tr>
+                  <th>Username</th>
                   <th>Name</th>
                   <th>Email</th>
                   <th>DOB</th>
@@ -187,6 +212,7 @@
               </thead>
               <tbody>
                 <tr v-for="patient in patients" :key="patient.id">
+                  <td>{{ patient.username || '—' }}</td>
                   <td>{{ patient.first_name }} {{ patient.last_name }}</td>
                   <td>{{ patient.email }}</td>
                   <td>{{ formatDate(patient.date_of_birth) }}</td>
@@ -327,8 +353,8 @@ const editingProviderId = ref<string>('')
 const editingPatientId = ref<string>('')
 const actionError = ref('')
 const actionMessage = ref('')
-const newProviderPassword = ref('')
-const newPatientPassword = ref('')
+const newProviderCredentials = ref<{ username: string; password: string } | null>(null)
+const newPatientCredentials = ref<{ username: string; password: string } | null>(null)
 
 const providerForm = ref<ProviderForm>(createProviderForm())
 const patientForm = ref<PatientForm>(createPatientForm())
@@ -424,6 +450,15 @@ function clearActionBanners() {
   actionMessage.value = ''
 }
 
+async function copyText(value: string) {
+  try {
+    await navigator.clipboard.writeText(value)
+    actionMessage.value = 'Temporary password copied to clipboard.'
+  } catch {
+    actionError.value = 'Could not copy password. Please copy it manually.'
+  }
+}
+
 function resetProviderForm() {
   editingProviderId.value = ''
   providerForm.value = createProviderForm()
@@ -471,7 +506,7 @@ function editPatient(patient: PatientRecord) {
 
 async function submitProvider() {
   clearActionBanners()
-  newProviderPassword.value = ''
+  newProviderCredentials.value = null
 
   try {
     if (editingProviderId.value) {
@@ -486,7 +521,10 @@ async function submitProvider() {
         body: JSON.stringify(providerForm.value)
       })
       actionMessage.value = 'Provider created successfully.'
-      newProviderPassword.value = created.temporaryPassword ?? ''
+      newProviderCredentials.value = {
+        username: created.doctor?.username || providerForm.value.username,
+        password: created.temporaryPassword ?? '',
+      }
     }
 
     resetProviderForm()
@@ -498,7 +536,7 @@ async function submitProvider() {
 
 async function submitPatient() {
   clearActionBanners()
-  newPatientPassword.value = ''
+  newPatientCredentials.value = null
 
   try {
     if (editingPatientId.value) {
@@ -513,7 +551,10 @@ async function submitPatient() {
         body: JSON.stringify(patientForm.value)
       })
       actionMessage.value = 'Patient created successfully.'
-      newPatientPassword.value = created.temporaryPassword ?? ''
+      newPatientCredentials.value = {
+        username: created.patient?.username || patientForm.value.username,
+        password: created.temporaryPassword ?? '',
+      }
     }
 
     resetPatientForm()
@@ -983,6 +1024,15 @@ async function signIn() {
   padding: 10px 12px;
   margin-bottom: 12px;
   font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.temp-password-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .table-wrap {

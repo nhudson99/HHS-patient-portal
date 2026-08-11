@@ -41,7 +41,13 @@
             <p class="eyebrow">Security</p>
             <h3>Change Password</h3>
           </div>
-          <RouterLink :to="homeRoute" class="back-link">Back to Home</RouterLink>
+          <RouterLink
+            v-if="!isForcedPasswordChange"
+            :to="homeRoute"
+            class="back-link"
+          >
+            Back to Home
+          </RouterLink>
         </div>
 
         <div v-if="isForcedPasswordChange" class="info-banner">
@@ -70,7 +76,9 @@
               minlength="8"
               required
             />
-            <p class="field-help">Use at least 8 characters.</p>
+            <p class="field-help">
+              Use at least 8 characters with upper/lowercase letters, a number, and a special character.
+            </p>
           </div>
 
           <div class="form-group">
@@ -103,12 +111,14 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { authApi } from '@/api'
+import { getCurrentUser, setCurrentUser } from '@/store'
 
 type StoredUser = {
   id?: string | number
   username?: string
   email?: string
   role?: 'doctor' | 'patient' | string
+  requirePasswordChange?: boolean
 }
 
 const route = useRoute()
@@ -192,7 +202,9 @@ const formattedRole = computed(() => {
   return role.charAt(0).toUpperCase() + role.slice(1)
 })
 const homeRoute = computed(() => currentUser.value?.role === 'doctor' ? '/provider' : '/patient')
-const isForcedPasswordChange = computed(() => route.query.password === 'required')
+const isForcedPasswordChange = computed(() => {
+  return route.query.password === 'required' || Boolean(currentUser.value?.requirePasswordChange)
+})
 
 const form = reactive({
   currentPassword: '',
@@ -254,7 +266,24 @@ async function handlePasswordChange() {
     form.newPassword = ''
     form.confirmPassword = ''
 
-    if (isForcedPasswordChange.value) {
+    // Clear forced-change flag so navigation / middleware allow dashboard access.
+    const stored = localStorage.getItem('currentUser')
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as StoredUser
+        const updated = { ...parsed, requirePasswordChange: false }
+        localStorage.setItem('currentUser', JSON.stringify(updated))
+        currentUser.value = updated
+        const storeUser = getCurrentUser()
+        if (storeUser) {
+          setCurrentUser({ ...storeUser, requirePasswordChange: false })
+        }
+      } catch {
+        // ignore parse errors; redirect still proceeds after validateSession
+      }
+    }
+
+    if (isForcedPasswordChange.value || route.query.password === 'required') {
       globalThis.setTimeout(() => {
         router.push(homeRoute.value)
       }, 1200)

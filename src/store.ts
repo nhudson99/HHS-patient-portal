@@ -38,12 +38,11 @@ export function clearAdminSession(): void {
   adminSession.value = null
 }
 
-// Hardcoded users for demo
+// Hardcoded users for demo (legacy offline helpers only — not used for login)
 export const users: User[] = [
   {
     id: 1,
     username: 'doctor1',
-    password: 'doctor123',
     email: 'doctor1@hhs.local',
     role: 'doctor',
     name: 'Dr. Sarah Johnson'
@@ -51,7 +50,6 @@ export const users: User[] = [
   {
     id: 2,
     username: 'patient1',
-    password: 'patient123',
     email: 'patient1@hhs.local',
     role: 'patient',
     name: 'John Smith',
@@ -131,7 +129,7 @@ export let currentUser: User | null = null
 export async function validateSession(): Promise<boolean> {
   const token = localStorage.getItem('sessionToken')
   if (!token) {
-    logout()
+    await logout()
     return false
   }
 
@@ -144,14 +142,38 @@ export async function validateSession(): Promise<boolean> {
 
     if (!response.ok) {
       // Session expired or invalid - auto logout
-      logout()
+      await logout()
       return false
+    }
+
+    const data = await response.json()
+    if (data?.user) {
+      const requirePasswordChange = Boolean(
+        data.requirePasswordChange ?? data.user.requirePasswordChange
+      )
+      const nextUser: User = {
+        id: data.user.id,
+        username: data.user.username,
+        password: '',
+        role: data.user.role,
+        name: data.user.username,
+        email: data.user.email,
+        requirePasswordChange,
+      }
+      setCurrentUser(nextUser)
+      localStorage.setItem('currentUser', JSON.stringify({
+        id: nextUser.id,
+        username: nextUser.username,
+        email: nextUser.email,
+        role: nextUser.role,
+        requirePasswordChange,
+      }))
     }
 
     return true
   } catch (error) {
     console.error('Session validation error:', error)
-    logout()
+    await logout()
     return false
   }
 }
@@ -161,14 +183,15 @@ const storedUser = localStorage.getItem('currentUser')
 if (storedUser) {
   try {
     const userData = JSON.parse(storedUser)
-    // Convert API user format to local User format
+    // Preserve UUID string ids from the API (do not parseInt).
     currentUser = {
-      id: parseInt(userData.id) || 0,
+      id: userData.id,
       username: userData.username,
       password: '', // Not stored in localStorage
       role: userData.role,
       name: userData.username, // Use username as name for now
-      email: userData.email
+      email: userData.email,
+      requirePasswordChange: Boolean(userData.requirePasswordChange),
     }
   } catch (e) {
     console.error('Failed to parse stored user:', e)
@@ -183,16 +206,25 @@ export function getCurrentUser(): User | null {
   return currentUser
 }
 
-export function authenticateUser(username: string, password: string): User | null {
-  const user = users.find(u => u.username === username && u.password === password)
-  if (user) {
-    setCurrentUser(user)
-    return user
-  }
-  return null
+export function requiresPasswordChange(user: User | null = currentUser): boolean {
+  return Boolean(user?.requirePasswordChange)
 }
 
-export function logout() {
+export async function logout() {
+  const token = localStorage.getItem('sessionToken')
+  if (token) {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      })
+    } catch {
+      // Best-effort server logout; always clear local state below.
+    }
+  }
   setCurrentUser(null)
   localStorage.removeItem('sessionToken')
   localStorage.removeItem('currentUser')
