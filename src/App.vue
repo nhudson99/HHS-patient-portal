@@ -327,6 +327,7 @@ const navButtons = computed<NavButton[]>(() => {
 const isPortalMessagingUser = computed(() => {
   return !!currentUser.value
     && !adminSession.value
+    && !currentUser.value.requirePasswordChange
     && (currentUser.value.role === 'doctor' || currentUser.value.role === 'patient')
 })
 
@@ -335,7 +336,10 @@ const showFeatureRequestButton = computed(() => {
 })
 
 const isProviderUser = computed(() => {
-  return !!currentUser.value && currentUser.value.role === 'doctor' && !adminSession.value
+  return !!currentUser.value
+    && currentUser.value.role === 'doctor'
+    && !adminSession.value
+    && !currentUser.value.requirePasswordChange
 })
 
 const unreadProviderAlertCount = computed(() => {

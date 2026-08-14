@@ -151,6 +151,7 @@ function clearProfilePhotoUrl() {
 async function loadPatientProfilePhoto() {
   clearProfilePhotoUrl()
   if (currentUser.value?.role !== 'patient') return
+  if (currentUser.value?.requirePasswordChange || route.query.password === 'required') return
 
   const token = localStorage.getItem('sessionToken')
   if (!token) return

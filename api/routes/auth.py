@@ -15,7 +15,8 @@ from api.utils.security import (
     verify_password, validate_password_strength
 )
 from api.utils.session_manager import (
-    create_session, invalidate_session, invalidate_other_user_sessions
+    create_session, invalidate_session,
+    invalidate_other_user_sessions, invalidate_all_user_sessions
 )
 from api.utils.audit_log import (
     log_login, log_logout, log_password_change,
@@ -398,8 +399,12 @@ def change_password():
         execute_query(update_query, (new_password_hash, new_salt_str, request.user['id']))
         
         # Invalidate other sessions (force re-login on other devices), keep current.
-        if hasattr(request, 'session_token') and request.session_token:
-            invalidate_other_user_sessions(request.user['id'], request.session_token)
+        # If the current token is missing, fall back to wiping all sessions.
+        current_token = getattr(request, 'session_token', None)
+        if current_token:
+            invalidate_other_user_sessions(request.user['id'], current_token)
+        else:
+            invalidate_all_user_sessions(request.user['id'])
         
         log_password_change(request.user['id'], False, request)
         

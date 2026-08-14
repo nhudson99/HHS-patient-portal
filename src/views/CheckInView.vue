@@ -307,6 +307,11 @@ const handleCredentialCheckIn = async () => {
       requirePasswordChange,
     })
 
+    if (requirePasswordChange) {
+      await router.push({ path: '/profile', query: { password: 'required' } })
+      return
+    }
+
     isLoggedInPatient.value = loginResponse.data.user.role === 'patient'
     await fetchNextAppointment()
     if (nextAppointment.value) {

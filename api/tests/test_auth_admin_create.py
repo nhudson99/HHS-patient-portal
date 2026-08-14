@@ -99,6 +99,43 @@ def test_change_password_keeps_current_session(client):
 
 
 @requires_db
+def test_change_password_invalidates_other_sessions(client):
+    suffix = _unique_suffix()
+    username = f'pwsessions_{suffix}'
+    email = f'{username}@example.com'
+    original_password = 'TempPass123!'
+    new_password = 'NewPass456!'
+
+    register = client.post('/api/auth/register', json={
+        'username': username,
+        'email': email,
+        'password': original_password,
+        'firstName': 'Pw',
+        'lastName': 'Sessions',
+        'dateOfBirth': '1990-01-01',
+    })
+    assert register.status_code == 201, register.get_json()
+
+    try:
+        current_headers = login_as(client, username, original_password)
+        other_headers = login_as(client, username, original_password)
+
+        change = client.post('/api/auth/change-password', headers=current_headers, json={
+            'currentPassword': original_password,
+            'newPassword': new_password,
+        })
+        assert change.status_code == 200, change.get_json()
+
+        still_valid = client.get('/api/auth/me', headers=current_headers)
+        assert still_valid.status_code == 200, still_valid.get_json()
+
+        other_session = client.get('/api/auth/me', headers=other_headers)
+        assert other_session.status_code == 401
+    finally:
+        _cleanup_user(username)
+
+
+@requires_db
 def test_must_change_password_blocks_phi_but_allows_auth_endpoints(client):
     suffix = _unique_suffix()
     username = f'mustchg_{suffix}'
