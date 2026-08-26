@@ -235,7 +235,7 @@ type ProviderAlertEventRow = {
 
 const route = useRoute()
 const router = useRouter()
-const currentUser = ref<{ name?: string; username?: string; role?: string } | null>(null)
+const currentUser = ref<{ name?: string; username?: string; role?: string; requirePasswordChange?: boolean } | null>(null)
 const showSidebar = ref(false)
 const showFeatureRequestModal = ref(false)
 const featureRequestDescription = ref('')
@@ -302,6 +302,9 @@ const pageTitle = computed(() => {
 const navButtons = computed<NavButton[]>(() => {
   if (adminSession.value) return []
   if (!currentUser.value) return []
+  if (currentUser.value.requirePasswordChange) {
+    return [{ label: 'Profile', to: '/profile' }]
+  }
   if (currentUser.value.role === 'doctor') {
     return [
       { label: 'Dashboard', to: '/provider' },
@@ -324,6 +327,7 @@ const navButtons = computed<NavButton[]>(() => {
 const isPortalMessagingUser = computed(() => {
   return !!currentUser.value
     && !adminSession.value
+    && !currentUser.value.requirePasswordChange
     && (currentUser.value.role === 'doctor' || currentUser.value.role === 'patient')
 })
 
@@ -332,7 +336,10 @@ const showFeatureRequestButton = computed(() => {
 })
 
 const isProviderUser = computed(() => {
-  return !!currentUser.value && currentUser.value.role === 'doctor' && !adminSession.value
+  return !!currentUser.value
+    && currentUser.value.role === 'doctor'
+    && !adminSession.value
+    && !currentUser.value.requirePasswordChange
 })
 
 const unreadProviderAlertCount = computed(() => {
@@ -738,13 +745,13 @@ async function submitFeatureRequest() {
   }
 }
 
-const handleLogout = () => {
+const handleLogout = async () => {
   if (adminSession.value) {
     clearAdminSession()
     router.push('/admin')
     return
   }
-  logout()
+  await logout()
   currentUser.value = null
   router.push('/')
 }

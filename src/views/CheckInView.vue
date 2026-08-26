@@ -291,9 +291,26 @@ const handleCredentialCheckIn = async () => {
       return
     }
 
+    const requirePasswordChange = Boolean(loginResponse.data.requirePasswordChange)
+    const userPayload = {
+      ...loginResponse.data.user,
+      requirePasswordChange,
+    }
     localStorage.setItem('sessionToken', loginResponse.data.sessionToken)
-    localStorage.setItem('currentUser', JSON.stringify(loginResponse.data.user))
-    setCurrentUser(loginResponse.data.user as any)
+    localStorage.setItem('currentUser', JSON.stringify(userPayload))
+    setCurrentUser({
+      id: loginResponse.data.user.id,
+      username: loginResponse.data.user.username,
+      email: loginResponse.data.user.email,
+      role: loginResponse.data.user.role as 'doctor' | 'patient',
+      name: loginResponse.data.user.username,
+      requirePasswordChange,
+    })
+
+    if (requirePasswordChange) {
+      await router.push({ path: '/profile', query: { password: 'required' } })
+      return
+    }
 
     isLoggedInPatient.value = loginResponse.data.user.role === 'patient'
     await fetchNextAppointment()

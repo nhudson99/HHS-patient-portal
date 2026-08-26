@@ -10,6 +10,10 @@ interface ApiResponse<T = any> {
   data?: T;
   error?: string;
   message?: string;
+  attemptsRemaining?: number;
+  minutesRemaining?: number;
+  minutesLocked?: number;
+  code?: string;
 }
 
 /**
@@ -52,6 +56,10 @@ async function request<T>(
     if (!response.ok) {
       return {
         error: data?.error || `HTTP ${response.status}: ${response.statusText}`,
+        attemptsRemaining: data?.attemptsRemaining,
+        minutesRemaining: data?.minutesRemaining,
+        minutesLocked: data?.minutesLocked,
+        code: data?.code,
       };
     }
     

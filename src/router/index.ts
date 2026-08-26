@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
-import { getCurrentUser, validateSession } from '@/store'
+import { getCurrentUser, requiresPasswordChange, validateSession } from '@/store'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -70,9 +70,7 @@ const router = createRouter({
 
 // Navigation guard with session validation
 router.beforeEach(async (to, _from, next) => {
-  const user = getCurrentUser()
-  
-  // Validate session token for protected routes
+  // Validate session token for protected routes first so currentUser is fresh.
   if (to.meta.requiresAuth) {
     const isValid = await validateSession()
     if (!isValid) {
@@ -80,20 +78,47 @@ router.beforeEach(async (to, _from, next) => {
       return
     }
   }
-  
+
+  const user = getCurrentUser()
+
   if (to.meta.requiresAuth && !user) {
     next('/')
-  } else if (to.meta.requiresAuth && to.meta.role && user?.role !== to.meta.role) {
+    return
+  }
+
+  if (to.meta.requiresAuth && to.meta.role && user?.role !== to.meta.role) {
     next('/')
-  } else if (to.path === '/' && user) {
-    // Redirect logged in users to their dashboard
+    return
+  }
+
+  // Force password change before any other authenticated destination.
+  if (
+    user &&
+    requiresPasswordChange(user) &&
+    to.path !== '/profile' &&
+    to.path !== '/admin' &&
+    to.path !== '/'
+  ) {
+    next({ path: '/profile', query: { password: 'required' } })
+    return
+  }
+
+  if (to.path === '/' && user) {
+    if (requiresPasswordChange(user)) {
+      next({ path: '/profile', query: { password: 'required' } })
+      return
+    }
     next(user.role === 'doctor' ? '/provider' : '/patient')
-  } else if (to.path === '/admin') {
+    return
+  }
+
+  if (to.path === '/admin') {
     // /admin handles its own auth via Microsoft SSO — always allow
     next()
-  } else {
-    next()
+    return
   }
+
+  next()
 })
 
 export default router

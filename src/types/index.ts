@@ -6,6 +6,7 @@ export interface User {
   role: 'doctor' | 'patient'
   name?: string
   birthday?: string
+  requirePasswordChange?: boolean
 }
 
 export interface Appointment {

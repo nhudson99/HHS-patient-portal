@@ -41,6 +41,25 @@ const password = ref('')
 const error = ref('')
 const loading = ref(false)
 
+function formatLoginError(response: {
+  error?: string
+  attemptsRemaining?: number
+  minutesRemaining?: number
+  minutesLocked?: number
+}): string {
+  const base = response.error || 'Unable to sign in. Please try again.'
+  if (typeof response.attemptsRemaining === 'number') {
+    return `${base} (${response.attemptsRemaining} attempt${response.attemptsRemaining === 1 ? '' : 's'} remaining)`
+  }
+  if (typeof response.minutesRemaining === 'number') {
+    return `${base}. Try again in about ${response.minutesRemaining} minute${response.minutesRemaining === 1 ? '' : 's'}.`
+  }
+  if (typeof response.minutesLocked === 'number') {
+    return `${base}. Locked for ${response.minutesLocked} minute${response.minutesLocked === 1 ? '' : 's'}.`
+  }
+  return base
+}
+
 const handleLogin = async () => {
   error.value = ''
   loading.value = true
@@ -48,10 +67,8 @@ const handleLogin = async () => {
   try {
     const response = await authApi.login(username.value, password.value)
     
-    console.log('Login response:', response)
-    
     if (response.error) {
-      error.value = response.error
+      error.value = formatLoginError(response)
       return
     }
     
@@ -59,31 +76,35 @@ const handleLogin = async () => {
       // Enforce single session: clear any active admin SSO session
       clearAdminSession()
 
-      // Store session token and user data
-      localStorage.setItem('sessionToken', response.data.sessionToken)
-      localStorage.setItem('currentUser', JSON.stringify(response.data.user))
-      
-      // Update store with current user
-      setCurrentUser({
+      const requirePasswordChange = Boolean(response.data.requirePasswordChange)
+      const userPayload = {
         id: response.data.user.id,
         username: response.data.user.username,
         email: response.data.user.email,
-        role: response.data.user.role as 'doctor' | 'patient'
+        role: response.data.user.role as 'doctor' | 'patient',
+        requirePasswordChange,
+      }
+
+      // Store session token and user data
+      localStorage.setItem('sessionToken', response.data.sessionToken)
+      localStorage.setItem('currentUser', JSON.stringify(userPayload))
+      
+      // Update store with current user
+      setCurrentUser({
+        ...userPayload,
+        password: '',
+        name: response.data.user.username,
       })
       
-      console.log('Login successful, user role:', response.data.user.role)
-      
-      if (response.data.requirePasswordChange) {
+      if (requirePasswordChange) {
         router.push({ path: '/profile', query: { password: 'required' } })
         return
       }
       
       // Redirect based on user role
       if (response.data.user.role === 'doctor') {
-        console.log('Redirecting to provider dashboard')
         router.push('/provider')
       } else {
-        console.log('Redirecting to patient dashboard')
         router.push('/patient')
       }
     }
